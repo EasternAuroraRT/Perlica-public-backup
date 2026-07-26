@@ -1,3 +1,4 @@
+# This module is not finished and not in use.
 import os
 import torch
 from PIL import Image

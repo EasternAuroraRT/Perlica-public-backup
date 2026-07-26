@@ -1,0 +1,416 @@
+from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
+from datetime import datetime
+import json
+from pathlib import Path
+import random
+import asyncio
+import uuid
+import threading
+import requests
+from ddgs import DDGS
+
+import config
+from modules.logger import log
+from napcat import * # pyright: ignore[reportWildcardImportFromLibrary]
+import modules.safe_executor as se
+import modules.file_manager as file_manager
+import modules.env as env # global status and variant
+from modules.chatwindow import ChatWindow, chat_type_str_cn, chat_type_str
+import modules.weather as weather
+import modules.history as history
+import modules.timer as timer
+import modules.alarm as alarm
+from modules.image_processor import *
+from modules.infolib import search_knowledge_base
+
+# region Async Task Management
+_task_store: dict[str, dict] = {}
+_task_lock = threading.Lock()
+
+def _run_async(func: Callable[[dict], list], args: dict) -> list:
+    """Start a long-running tool in a background thread, returning an immediate result with a task_id."""
+    task_id = str(uuid.uuid4())
+    with _task_lock:
+        _task_store[task_id] = {
+            'status': 'running',
+            'result': None,
+        }
+    def target():
+        try:
+            result = func(args)
+            with _task_lock:
+                if task_id in _task_store:
+                    _task_store[task_id]['status'] = 'done'
+                    _task_store[task_id]['result'] = result
+        except Exception as e:
+            log.error(f"[tools->_run_async->target] {e}")
+            with _task_lock:
+                if task_id in _task_store:
+                    _task_store[task_id]['status'] = 'error'
+                    _task_store[task_id]['result'] = {'type': 'text', 'text': f"Async tool execution error: {e}"}
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    return [{
+        'type': 'text',
+        'text': f"长耗时任务已启动，任务 id 为 `{task_id}`。请稍后使用 `get_tool_result` 传入此 id 查询状态和结果。等待结果的过程中你可以与其他人互动。"
+    }]
+# endregion
+
+# region Tool Defs
+def placeholder(_: dict) -> list:
+    return [{'type': 'text', 'text': "当前工具正在开发中, 暂时无法正常工作"}]
+
+def get_tool_result(args: dict) ->list:
+    task_id = args.get('task_id')
+    if not task_id or not isinstance(task_id, str):
+        return [{'type': 'text', 'text': "请提供有效的 task_id。"}]
+    with _task_lock:
+        entry = _task_store.get(task_id)
+        if entry is None:
+            return [{'type': 'text', 'text': f"未找到 id 为 `{task_id}` 的任务。"}]
+        if entry['status'] == 'running':
+            return [{'type': 'text', 'text': f"任务 `{task_id}` 仍在运行中，请稍后再试。为避免频繁调用，你可以使用计时器设置等待时间，并结束调用。"}]
+        else:
+            try:
+                assert isinstance(entry['result'], list)
+                result = entry['result'].copy()
+                del _task_store[task_id]
+                return result
+            except Exception as e:
+                return [{'type': 'text', 'text': f"工具结果获取异常: {e}"}]
+
+def type_text(args: dict) -> list:
+    text = args.get('text')
+    if not env.active_chatwindow:
+        return [{'type': 'text', 'text': "当前未选择聊天窗口，请选择后重试。"}]
+    if text == None or not isinstance(text, str):
+        return [{'type': 'text', 'text': "Function didn't receive legal argument(s)."}]
+    env.active_chatwindow.type_txt(text)
+    return [{'type': 'text', 'text': "已写入内容至当前聊天框, 需要时可调用`check_chatbox`检查聊天框全部内容."}]
+
+def type_del(args: dict) -> list:
+    num = args.get("delnum")
+    if not isinstance(num, int):
+        return [{'type': 'text', 'text': f"收到参数`{num}`但无法转换为`int`. 操作将不生效."}]
+    env.active_chatwindow.type_del(num)
+    return [{'type': 'text', 'text': "已删除指定数量内容. 注意: 部分内容可能被视作整体删除; 需要时可调用`check_chatbox`检查聊天框全部内容."}]
+
+def send_msg(_: dict) -> list:
+    if not env.active_chatwindow.content:
+        return [{'type': 'text', 'text': "你还没有输入任何内容！"}]
+    if asyncio.run(env.active_chatwindow.send()):
+        return [{'type': 'text', 'text': f"已向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送{str(env.active_chatwindow)}. 当前聊天窗口输入框已清空."}]
+    else:
+        return [{'type': 'text', 'text': f"向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送消息失败."}]
+
+# def end_reply(_: dict) -> list:
+#     return placeholder(_)
+# This tool call will be processed directly inside the chat loop.
+
+def recall_msg(args: dict) -> list:
+    msg_id = args.get('message_id')
+    assert isinstance(msg_id, int|str)
+    try:
+        asyncio.run(env.npclient.delete_msg(message_id=msg_id))
+    except Exception as e:
+        return [{'type': 'text', 'text': f"Failed to recall message {msg_id}: {str(e)}"}]
+    history.delete_message_by_id(int(msg_id))
+    return [{'type': 'text', 'text': f"Message {msg_id} is recalled."}]
+
+def check_chatbox(_: dict) -> list:
+    return [{'type': 'text', 'text': str(env.active_chatwindow)}]
+
+def find_cursor(_: dict) -> list:
+    return [{'type': 'text', 'text': str(env.active_chatwindow.cursor)}]
+
+def switch_chat_window(args: dict) -> list:
+    type = args.get('type')
+    assert(isinstance(type, str))
+    id = args.get('id')
+    assert(isinstance(id, str))
+    chat_type: ChatWindow.ChatType
+    chat_history: str
+    match type:
+        case 'private':
+            chat_type = ChatWindow.ChatType.Private
+            chat_history = history.get_private_messages(id, 5)
+        case 'group':
+            chat_type = ChatWindow.ChatType.Group
+            chat_history = history.get_group_messages(id, 10)
+        case _:
+            return [{'type': 'text', 'text': f"Unable to parse type `{type}`."}]
+    if id in env.chatwindows[chat_type]:
+        env.active_chatwindow = env.chatwindows[chat_type].get(id)
+    else:
+        return [{'type': 'text', 'text': f"Target chat is not found with id `{id}`."}]
+    return [{'type': 'text', 'text': "\n".join([f"History:\n{chat_history}", f"Chatbox:\n{str(env.active_chatwindow)}"])}]
+
+def get_image_by_url(args: dict) -> list:
+    def _get_image(a: dict) -> list:
+        url = a.get('url', '')
+        assert isinstance(url, str)
+        prompt = a.get('prompt')
+        assert isinstance(prompt, str|None)
+        result: str|None = None
+        try:
+            assert(url)
+            image_base64 = get_image_base64_from_url(url)
+            assert(image_base64)
+            if config.is_multimodal():
+                return [{'type': 'image_url', 'image_url':{'url':image_base64}}]
+            else:
+                result = get_image_description_from_base64(image_base64, prompt)
+                assert(result)
+        except Exception as e:
+            log.error(f"[tools->get_image_by_url] {e}")
+            return [{'type': 'text', 'text': f"Failed to get image from url: {url}, error: {e}"}]
+        return [{'type': 'text', 'text': result}]
+    return _run_async(_get_image, args)
+
+def get_image_by_path(args: dict) -> list:
+    def _get_image(a: dict) -> list:
+        path = a.get('path', '')
+        assert isinstance(path, str)
+        prompt = a.get('prompt')
+        assert isinstance(prompt, str|None)
+        result: str|None = None
+        try:
+            assert(path)
+            image_base64 = get_image_base64_from_path(path)
+            assert(image_base64)
+            if config.is_multimodal():
+                return [{'type': 'image_url', 'image_url':{'url':image_base64}}]
+            else:
+                result = get_image_description_from_base64(image_base64, prompt)
+                assert(result)
+        except Exception as e:
+            log.error(f"[tools->get_image_by_path] {e}")
+            return [{'type': 'text', 'text': f"Failed to get image from path: {path}, error: {e}"}]
+        return [{'type': 'text', 'text': result}]
+    return _run_async(_get_image, args)
+
+def get_history(args: dict) -> list:
+    count = args.get('count')
+    assert(isinstance(count, int))
+    result: str = ''
+    match env.active_chatwindow.chat_type:
+        case ChatWindow.ChatType.Private:
+            result = history.get_private_messages(env.active_chatwindow.chat_id ,count)
+        case ChatWindow.ChatType.Group:
+            result = history.get_group_messages(env.active_chatwindow.chat_id, count)
+        case _:
+            result = f"Failed to get history message! Current chat window is invalid."
+    return [{'type': 'text', 'text': result}]
+
+def get_current_time(args: dict) -> list:
+    default_format = "%Y-%m-%d %H:%M:%S"
+    format = args.get("format")
+    if format == None or not isinstance(format, str):
+        format = default_format
+    result: str
+    try:
+        result = datetime.now().strftime(format)
+    except (ValueError, TypeError) as e:
+        log.error(f"[tools->get_current_time] {e}")
+        result = f"Invalid format: '{format}', using default.\n" + datetime.now().strftime(default_format)
+    return [{'type': 'text', 'text': result}]
+
+def append_diary(args: dict) -> list:
+    return placeholder(args)
+
+def read_diary(args: dict) -> list:
+    return placeholder(args)
+
+def get_random_value(_: dict) -> list:
+    return [{'type': 'text', 'text': str(random.random())}]
+
+def set_timer(args: dict) -> list:
+    time = args.get('time')
+    assert(isinstance(time, float|int))
+    description = args.get('description')
+    assert(isinstance(description, str))
+    id = timer.set_timer(time, description)
+    return [{'type': 'text', 'text': f'Timer {id} is set.'}]
+
+def set_alarm(args: dict) -> list:
+    time = args.get('time')
+    assert(isinstance(time, str))
+    loop = args.get('loop', 'once')
+    assert(loop in ['once', 'daily', 'weekly'])
+    about = args.get('description', '')
+    assert(isinstance(about, str))
+    try:
+        id = alarm.set_alarm(time, loop, about)
+        return [{'type': 'text', 'text': f"Alarm {id} set successfully with {f'description `{about}`' if about else 'no description'}."}]
+    except Exception as e:
+        return [{'type': 'text', 'text': str(e)}]
+
+def cancel_timer(args: dict) -> list:
+    id = args.get('index')
+    assert(isinstance(id, str))
+    return [{'type': 'text', 'text': f"{f'Successfully cancelled timer {id}.' if timer.cancel_timer_by_id(id) else f'Failed to cancel timer {id}. Please check.'}"}]
+
+def list_timer(_: dict) -> list:
+    return [{'type': 'text', 'text': str(timer.get_all_timers())}]
+
+def list_alarms(_: dict) -> list:
+    return [{'type': 'text', 'text': str(alarm.get_all_alarms())}]
+
+def cancel_alarm(args: dict) -> list:
+    id = args.get('index')
+    assert(isinstance(id, str))
+    alarm.cancel_alarm(id)
+    return [{'type': 'text', 'text': f'Alarm {id} is cancelled'}]
+
+def search_knowledge(args: dict) -> list:
+    query = args.get('query')
+    top_k = args.get('top_k', 3)
+    if not query:
+        return [{'type': 'text', 'text': 'Parameter `query` is empty! Please check.'}]
+    if not isinstance(top_k, int):
+        return [{'type': 'text', 'text': 'Parameter `top_k` is invalid! Please check.'}]
+    return search_knowledge_base(query, top_k)
+
+def write_file(args: dict) -> list:
+    path = args.get('path','.')
+    mode = args.get('mode', 'a')
+    content = args.get('content', '')
+    file_manager.write_file(path, mode, content)
+    return [{'type': 'text', 'text': f"内容已记录: path = {path}, mode = {mode}"}]
+
+def read_file(args: dict) -> list:
+    path = args.get('path','.')
+    return [{'type': 'text', 'text': file_manager.read_file(path)}]
+
+def cd(args: dict) -> list:
+    path = args.get('path','.')
+    return [{'type': 'text', 'text': file_manager.cd(path)}]
+
+def ls(args: dict) -> list:
+    path = args.get('path','.')
+    return [{'type': 'text', 'text': file_manager.ls(path)}]
+
+def mkdir(args: dict) -> list:
+    path = args.get('path','.')
+    return [{'type': 'text', 'text': file_manager.mkdir(path)}]
+
+def rm(args: dict) -> list:
+    path = args.get('path','.')
+    r = args.get('recursive', False)
+    f = args.get('force', False)
+    return [{'type': 'text', 'text': file_manager.rm(path, r, f)}]
+
+def cp(args: dict) -> list:
+    src = args.get('src')
+    dst = args.get('dst')
+    if not src or not dst:
+        return [{'type': 'text', 'text': "cp: missing arguments"}]
+    r = args.get('recursive', False)
+    return [{'type': 'text', 'text': file_manager.cp(src, dst, r)}]
+
+def mv(args: dict) -> list:
+    src = args.get('src')
+    dst = args.get('dst')
+    if not src or not dst:
+        return [{'type': 'text', 'text': "mv: missing arguments"}]
+    return [{'type': 'text', 'text': file_manager.mv(src, dst)}]
+
+def execute_pystring(args: dict) -> list:
+    return _run_async(lambda a: [{'type': 'text', 'text': se.execute_code(a.get('code',''))}], args)
+
+def execute_pyfile(args: dict) -> list:
+    return _run_async(lambda a: [{'type': 'text', 'text': se.execute_file(a.get('path',''))}], args)
+
+def get_current_weather(args: dict) -> list:
+    return _run_async(lambda a: [{'type': 'text', 'text': str(weather.get_current_weather(a.get('location','')))}], args)
+
+def send_poke(args: dict) -> list:
+    return placeholder(args)
+    target = args.get('target_id')
+    assert(isinstance(target, str))
+    group = args.get('group_id', '')
+    assert(isinstance(group, str))
+    if group:
+        asyncio.run(env.npclient.send_poke(user_id=str(env.self_id), target_id=target, group_id=group))
+    else:
+        asyncio.run(env.npclient.send_poke(user_id=str(env.self_id), target_id=target))
+    return f'Poked user {target} {f"in group {group} " if group else ''}successfully.'
+
+def get_user_info(args: dict) -> list:
+    user_id = args.get('user_id')
+    assert(isinstance(user_id, str))
+    return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_stranger_info(user_id=user_id)))}]
+
+def get_msg_by_id(args: dict) -> list:
+    msg_id = args.get('id')
+    assert(isinstance(msg_id, int))
+    return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_msg(message_id=msg_id)))}]
+
+def web_search(args: dict) -> List:
+    def _web_search(params: dict):
+        query = params.get("query")
+        if not query:
+            return [{"type": "text", "text": "错误：缺少 'query' 参数"}]
+        max_results = params.get("max_results", 10)
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=max_results))
+            if not results:
+                return [{"type": "text", "text": f"未找到与 '{query}' 相关的结果"}]
+            # 将搜索结果拼接成可读文本，每个结果包含标题、正文和链接
+            text_parts = []
+            for idx, r in enumerate(results, 1):
+                title = r.get("title", "无标题")
+                body = r.get("body", "无摘要")
+                link = r.get("href", "#")
+                text_parts.append(f"{idx}. {title}\n   {body}\n   来源: {link}")
+            full_text = f"搜索结果（共{len(results)}条）：\n" + "\n\n".join(text_parts)
+            return [{"type": "text", "text": full_text}]
+        except Exception as e:
+            # 任何异常都返回错误信息（不抛出异常）
+            return [{"type": "text", "text": f"搜索时发生错误: {str(e)}"}]
+    return _run_async(_web_search, args)
+
+def read_web(args: dict) -> list:
+    # return placeholder(args)
+    def _read_web(params: dict) -> list:
+        url = params.get("url")
+        if not url:
+            return [{"type": "text", "text": "错误：缺少 'url' 参数"}]
+        timeout = params.get("timeout", 30)
+        # Jina Reader API 端点：在目标 URL 前加上 https://r.jina.ai/
+        reader_url = f"https://r.jina.ai/{url}"
+        try:
+            response = requests.get(reader_url, timeout=timeout)
+            response.raise_for_status()
+            # 默认返回 Markdown 格式文本
+            content = response.text
+            if not content or len(content.strip()) == 0:
+                raise Exception(f"{url} 返回的内容为空", response)
+            return [{"type": "text", "text": content}]
+        except Exception as e:
+            return [{"type": "text", "text": str(e)}]
+    return _run_async(_read_web, args)
+#endregion
+
+#region Inner Logic
+tools_json = json.loads(Path(__file__).with_name("tools.json").read_text(encoding='utf8'))["tools"]
+tool_list: dict[str, Callable[[dict], list]] = {}
+
+def call_tool(tool_name: str, json_arg: str) -> list:
+    try:
+        args = json.loads(json_arg)
+    except json.JSONDecodeError:
+        return [{'type': 'text', 'text': f"参数解析错误: `{json_arg}` 不是合法 JSON"}]
+    func = tool_list.get(tool_name) or placeholder
+    try:
+        result = func(args)
+    except Exception as e:
+        result = [{'type': 'text', 'text': str(e)}]
+    return result
+
+for t in tools_json:
+    func_name = t.get("function", {}).get("name")
+    if func_name:
+        tool_list[func_name] = globals().get(func_name, placeholder)
+#endreigion

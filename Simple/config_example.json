@@ -1,0 +1,45 @@
+{
+  "using_model": "deepseek",
+  "using_multimodal": "glm_multi",
+  "model_config": {
+    "deepseek": {
+      "model_name": "deepseek-v4-pro",
+      "base_url": "https://api.deepseek.com/",
+      "apikey": ";)",
+      "multimodal": false
+    },
+    "glm_multi": {
+      "model_name": "glm-4.1v-thinking-flash",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "apikey": ";)",
+      "multimodal": true
+    },
+    "glm": {
+      "model_name": "glm-4.7-flash",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "apikey": ";)",
+      "multimodal": false
+    },
+    "qwen-hy": {
+      "model_name": "qwen3.5-flash",
+      "base_url": "https://tokenhub.tencentmaas.com/v1",
+      "apikey": ";)",
+      "multimodal": true
+    },
+    "local-gemma": {
+      "model_name": "gemma",
+      "base_url": "http://localhost:11434/v1",
+      "apikey": "nil",
+      "multimodal": false
+    }
+  },
+  "temperature": 0.8,
+  "np_ws_url": "ws://127.0.0.1:3001",
+  "np_token": ";)",
+  "weather_host": ";)",
+  "weather_private_key_pem": ";)",
+  "weather_project_id": ";)",
+  "weather_credential_id": ";)",
+  "message_compress_lenth_threshold": 20,
+  "message_debug_max_length": 1000
+}

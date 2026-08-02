@@ -29,19 +29,19 @@
 
 [tools_data.json](Simple/modules/tools_data.json) 更清晰的工具配置.
 
-## Web Search
+### Web Search
 
 不保证可用性. 如果有条件请自行更换方式.
 
 > 参见 [tools.py->web_search](Simple/modules/tools.py)
 
-## Weather
+### Weather
 
 采用和风天气 API.
 参见 [和风天气开发者服务](https://dev.qweather.com/)
 自行配置后向 config.json 填入配置项.
 
-## RAG
+### RAG
 
 运行前先跑一遍 [infolib_init.py](Simple/modules/infolib_init.py).
 
@@ -49,7 +49,7 @@
 
 > 不配置不跑问题也不大~~, 就是佩丽卡查不了知识库会显得很无能~~.
 
-## Logging
+### Logging
 
 自己去 [logger.py](Simple/modules/logger.py) 改配置.
 
@@ -69,7 +69,7 @@ config.json 内所有配置支持热更新, 无需重启程序即可修改配置
 这个框架高度依赖 tool call (因为设计上就是佩丽卡在~~玩手机~~使用终端), 因此一定要配置支持的模型.
 于是核心功能代码在 [tools.py](Simple/modules/tools.py), 拓展功能主要就是往这里面写东西.
 [tool_manager.py](Simple/modules/tool_manager.py) 和 [tools_data.json](Simple/modules/tools_data.json) 是为了管理 [工具 json](Simple/modules/tools.json) 做的脚本和简化版资源, 毕竟 api 要的 tool 格式还是太繁琐了.
-其他模块则主要是对 tools 的具体实现。采用模块化设计是为了去耦合, 降低 tools.py 被直接改坏的风险~~, 以及方便 vibe coding 隔离环境避免 ai 瞎改~~. 通过看 tools.py 你应当能大致了解每个模块是干什么的.
+其他模块则主要是对 tools 的具体实现。采用模块化设计是为了去耦合, 降低 tools.py 被直接改坏的风险,~~以及方便 vibe coding 隔离环境避免 ai 瞎改~~. 通过看 tools.py 你应当能大致了解每个模块是干什么的.
 
 但其中 [infolib.py](Simple/modules/infolib_init.py) 是为了管理角色知识库的代码, 每次更新知识库后应当跑一遍来生成搜索索引. 这个代码可以独立于项目运行; 知识库也可以运行时热更新 (代价是每次查都重新读取索引).
 
@@ -79,7 +79,7 @@ config.json 内所有配置支持热更新, 无需重启程序即可修改配置
 
 部分模块是ai写的, 但我明确要求了接口和模块封闭性并通过了高强度实际使用和多次调试迭代.
 项目框架是自己设计的, 框架上的代码绝大多数是手写的. 我会尽力做到即便不写注释代码也能自解释.
-但不论怎么说, 你一定能看出来哪些是ai哪些是非遗纯手工~~(因为只有ai喜欢疯狂写注释)~~.
+但不论怎么说, 你一定能看出来哪些是ai哪些是非遗纯手工~~因为只有ai喜欢疯狂写注释~~.
 
 如果你还有任何问题, 请不要轰炸我 QAQ.
 

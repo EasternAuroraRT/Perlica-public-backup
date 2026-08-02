@@ -11,9 +11,11 @@ _mtime: float = 0.0
 
 # ---------- 类型注解（供 Pylance / IDE 识别） ----------
 # 这些注解仅用于静态分析，运行时实际值由 __getattr__ 动态提供
-_using_model: str
-_using_mutimodal: str
 _model_config: Dict[str, Any]
+
+using_model: str
+using_mutimodal: str
+using_conpress_model: str
 
 model_name: str
 base_url: str
@@ -76,11 +78,12 @@ def __getattr__(name: str) -> Any:
             raise e
 
     # 特殊名称映射（仅保留历史遗留的两个变量）
-    special_map = {
-        "_using_model": "using_model",
-        "_using_mutimodal": "using_multimodal",
-    }
-    key = special_map.get(name, name)
+    # special_map = {
+    #     "_using_model": "using_model",
+    #     "_using_mutimodal": "using_multimodal",
+    # }
+    # key = special_map.get(name, name)
+    key = name
 
     try:
         value = config[key]
@@ -133,6 +136,24 @@ def get_multimodal_env() -> Tuple[str, str, str]:
             raise RuntimeError(f"Missing '{k}' for model '{using_multi}'")
     return entry["model_name"], entry["base_url"], entry["apikey"]
 
+def get_compress_env() -> Tuple[str, str, str]:
+    """获取多模态模型的环境信息（model_name, base_url, apikey）"""
+    config = _get_config()
+    try:
+        using_compress = config["using_compress_model"]
+    except KeyError:
+        raise RuntimeError("Missing required key 'using_compress_model' in config")
+    model_cfg = config.get("model_config")
+    if not isinstance(model_cfg, dict):
+        raise RuntimeError("'model_config' must be a dict")
+    if using_compress not in model_cfg:
+        raise RuntimeError(f"Model '{using_compress}' not found in model_config")
+    entry = model_cfg[using_compress]
+    required = ("model_name", "base_url", "apikey")
+    for k in required:
+        if k not in entry:
+            raise RuntimeError(f"Missing '{k}' for model '{using_compress}'")
+    return entry["model_name"], entry["base_url"], entry["apikey"]
 
 # 可选：手动强制重新加载（调试用）
 def reload_config() -> None:

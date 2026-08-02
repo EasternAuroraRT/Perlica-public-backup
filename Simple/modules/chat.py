@@ -1,11 +1,9 @@
 from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
-import asyncio
 import threading
 from openai import OpenAI
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from concurrent.futures import ThreadPoolExecutor, Future
 
-import napcat as np
 import config # customized configuration
 import modules.tools as tools
 import modules.env as env # global status and variant
@@ -48,33 +46,32 @@ def _call_api(last_prompt: str|list, high_priority: bool) -> None:
         _stop_event.clear()
     # Initializing
     log.info("Trying to add a new chat thread...")
-    messages: list[ChatCompletionMessageParam] = env.conversation.copy()
+    messages: list[ChatCompletionMessageParam] = env.sysprompt.copy()
     compressing_bkup = _compressing_messages.copy()
     uncompressed_bkup = _uncompressed_messages.copy()
     if _compress_thread and _compress_thread.done():
         try:
-            messages.append({'role': 'user', 'content': _compress_thread.result()})
+            compress_result = _compress_thread.result()
             log.debug("New compressed results received.")
+            _compressing_messages = [{'role': 'user', 'content': compress_result}]
         except Exception as e:
             log.error(f"[chat->_call_api->_compress_thread] {e}")
-        _compressing_messages.clear()
-    else:
-        messages.extend(_compressing_messages)
-    messages.extend(_uncompressed_messages)
-    messages.append({"role": "user", "content": last_prompt})
+        _compress_thread = None
+    _uncompressed_messages.append({"role": "user", "content": last_prompt})
     log.debug(f"msg round len  = {len(messages)}\nmsg string len = {len(str(messages))}")
     # Working
     should_end: bool = False
-    reply: str = ''
     try:
         while not should_end:
+            reply: str = ''
             stream = ai.chat.completions.create(
                 model=config.model_name,
-                messages=messages,
+                messages=messages+_compressing_messages+_uncompressed_messages,
                 tools=tools.tools_json,
                 tool_choice="auto",
                 stream=True,
                 temperature=config.temperature,
+                extra_body={"thinking": {"type": "disabled"}}
             ) # pyright: ignore[reportCallIssue]
             tool_calls_collector = {}
             for chunk in stream: # pyright: ignore[reportGeneralTypeIssues]
@@ -110,7 +107,7 @@ def _call_api(last_prompt: str|list, high_priority: bool) -> None:
             tool_calls_list = [tool_calls_collector[i] for i in tool_calls_collector.keys()]
             result_message: ChatCompletionMessageParam = {'role': 'assistant', 'content': reply}
             if should_end:
-                messages.append(result_message)
+                _uncompressed_messages.append(result_message) # Without calling tools we add clean reply in case api call failure.
                 break
             if tool_calls_list:
                 result_message['tool_calls'] = tool_calls_list
@@ -124,22 +121,25 @@ def _call_api(last_prompt: str|list, high_priority: bool) -> None:
                     should_end = True
                     tool_call_result = [{'type': 'text', 'text': "Reply ended."}]
                 else:
-                    tool_call_result = tools.call_tool(tool_call_delta['function']['name'], tool_call_delta['function']['arguments'])
+                    try:
+                        tool_call_result = tools.call_tool(tool_call_delta['function']['name'], tool_call_delta['function']['arguments'])
+                    except Exception as e:
+                        log.error(f"[chat->_call_api->call_tool] {e}")
+                        tool_call_result = [{'type': 'text', 'text': str(e)}]
                 _tool_cal_result_len = len(str(tool_call_result))
                 log.debug(f"[Tool Call Result]\n"+str(tool_call_result)[:config.message_debug_max_length]+f"{f'... (len={_tool_cal_result_len})'if _tool_cal_result_len>config.message_debug_max_length else ''}")
                 tool_call_results.append({'role': 'tool', 'content': tool_call_result, "tool_call_id": tool_call_delta['id']})
-            messages.append(result_message)
-            messages.extend(tool_call_results)
-        _uncompressed_messages = messages[1+len(_compressing_messages):]
+            _uncompressed_messages.append(result_message)
+            _uncompressed_messages.extend(tool_call_results)
         _uncompressed_str_len = len(str(_uncompressed_messages))
         log.debug("Uncompressed Messages:\n"+str(_uncompressed_messages)[:config.message_debug_max_length]+f"{f'... (len={_uncompressed_str_len})'if _uncompressed_str_len>config.message_debug_max_length else ''}")
         if len(_uncompressed_messages) > config.message_compress_lenth_threshold:
             log.info("Too many messages. Trying to compress.")
-            if not _compress_thread or (_compress_thread and _compress_thread.done()):
-                _compressing_messages = _uncompressed_messages.copy()
+            if not _compress_thread:
+                _compressing_messages.extend(_uncompressed_messages)
                 _compress_thread = ThreadPoolExecutor().submit(get_compressed_context, _compressing_messages)
                 _uncompressed_messages.clear()
-            
+
     except Exception as e:
         log.error(f"[chat->_call_api->chat failure] {e}")
         _compressing_messages = compressing_bkup

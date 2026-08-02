@@ -474,5 +474,20 @@
         "required": true
       }
     ]
+  },
+  "set_no_disturb_on": {
+    "description": "打开勿扰模式",
+    "parameters": [
+      {
+        "name": "time",
+        "type": "integer",
+        "description": "勿扰模式持续时长(分钟), 默认为一天(1440), 参数必须大于0.",
+        "required": false
+      }
+    ]
+  },
+  "set_no_disturb_off": {
+    "description": "关闭勿扰模式",
+    "parameters": []
   }
 }

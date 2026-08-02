@@ -325,16 +325,16 @@ def get_current_weather(args: dict) -> list:
     return _run_async(lambda a: [{'type': 'text', 'text': str(weather.get_current_weather(a.get('location','')))}], args)
 
 def send_poke(args: dict) -> list:
-    return placeholder(args)
     target = args.get('target_id')
     assert(isinstance(target, str))
     group = args.get('group_id', '')
     assert(isinstance(group, str))
     if group:
-        asyncio.run(env.npclient.send_poke(user_id=str(env.self_id), target_id=target, group_id=group))
+        asyncio.run(env.npclient.send_poke(user_id=target, group_id=group))
     else:
-        asyncio.run(env.npclient.send_poke(user_id=str(env.self_id), target_id=target))
-    return f'Poked user {target} {f"in group {group} " if group else ''}successfully.'
+        asyncio.run(env.npclient.send_poke(user_id=target))
+    result = f'Poked user {target} {f"in group {group} " if group else ''}successfully.'
+    return [{'type': 'text', 'text': result}]
 
 def get_user_info(args: dict) -> list:
     user_id = args.get('user_id')
@@ -391,6 +391,25 @@ def read_web(args: dict) -> list:
         except Exception as e:
             return [{"type": "text", "text": str(e)}]
     return _run_async(_read_web, args)
+
+def set_no_disturb_on(args: dict) -> list:
+    time = args.get('time', 1440)
+    assert isinstance(time, int)
+    assert time > 0
+    env.no_disturb_mode = True
+    def action():
+        env.no_disturb_mode = False
+    timer = threading.Timer(time*60, action)
+    timer.daemon = True
+    return [{"type": "text", "text": f'No disturbing mode is ON and will be set to OFF automatically in {time} minute(s).'}]
+
+def set_no_disturb_off(_: dict) -> list:
+    env.no_disturb_mode = False
+    return [{"type": "text", "text": 'No disturbing mode is set to OFF.'}]
+
+# def read_qzone(args: dict) -> list:
+#     return placeholder(args)
+
 #endregion
 
 #region Inner Logic

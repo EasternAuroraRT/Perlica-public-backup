@@ -37,8 +37,11 @@ def parse_msg_to_str(msg: tuple[Message | UnknownMessageSegment, ...]) -> str:
     for seg in msg:
         match seg:
             case Reply():
-                if seg.id:
-                    result += f"Reply(id='{seg.id}', raw={asyncio.run(env.npclient.get_msg(message_id=int(seg.id)))})"
+                try:
+                  if seg.id:
+                      result += f"Reply(id='{seg.id}', raw={asyncio.run(env.npclient.get_msg(message_id=int(seg.id)))})"
+                except Exception as e:
+                    result += f"Reply(id='{seg.id}' error: cannot find this message)"
             case Face():
                 face = get_qface(int(seg.id))
                 result += f"Face(id='{seg.id}', resultId='{seg.resultId}', chainCount={seg.chainCount}, {get_qface_info(int(seg.id))})"

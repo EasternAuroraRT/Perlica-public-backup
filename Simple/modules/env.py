@@ -6,6 +6,7 @@ from pathlib import Path
 import threading
 import asyncio
 import json
+from enum import * # pyright: ignore[reportWildcardImportFromLibrary]
 
 import napcat as np
 import config
@@ -27,7 +28,14 @@ self_name: str
 chatwindows: dict[ChatWindow.ChatType, dict[str, ChatWindow]] = {}
 active_chatwindow: ChatWindow
 
-conversation: list[ChatCompletionMessageParam] = [] # Do not easily read or write this variant -- unless you know what you are doing!
+sysprompt: list[ChatCompletionMessageParam] = [] # Do not easily read or write this variant -- unless you know what you are doing!
+
+class Status(Enum):
+    Active = auto
+    Sleepy = auto
+    Sleeping = auto
+
+no_disturb_mode = False
 
 async def init():
     async with npclient:
@@ -80,11 +88,11 @@ async def init():
             chatwindows[ChatWindow.ChatType.Group][group_id] = ChatWindow(ChatWindow.ChatType.Group, group_id, group_name)
     # Initializing conversation
         role_prompt += "\nCurrently not in any chat window.\n"
-        conversation.append({"role": "system", "content": role_prompt})
+        sysprompt.append({"role": "system", "content": role_prompt})
 
 def reload():
     chatwindows.clear()
-    conversation.clear()
+    sysprompt.clear()
     asyncio.run(init())
 
 def get_status_prompt() -> str:

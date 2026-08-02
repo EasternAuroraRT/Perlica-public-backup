@@ -3,7 +3,7 @@ import os
 import threading
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, List, Literal, Optional, Union
+from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 
 import modules.chat as chat
 from modules.logger import log
@@ -49,7 +49,7 @@ def _load_alarms() -> None:
                 'loop': info['loop'],
                 'about': info['about'],
             }
-            log.info(f"Alarm {alarm_id} initialized.\nLoop: {info['loop']}\nDescription: {info['about']}\n")
+            log.info(f"Alarm {alarm_id} initialized.\nTime: {info['time']}\nLoop: {info['loop']}\nDescription: {info['about']}")
         except (KeyError, ValueError) as e:
             log.error(f"[alarm->_load_alarms->for loop] {e}")
             continue

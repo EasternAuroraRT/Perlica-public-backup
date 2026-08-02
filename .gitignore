@@ -1,12 +1,14 @@
 *.pyc
 
 tmp/
+NapCat.Shell/
 napcat-sdk-main/
 NapcatClient/
 install.sh
 *.pem
 .vscode/
 sync.sh
+.kilo/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

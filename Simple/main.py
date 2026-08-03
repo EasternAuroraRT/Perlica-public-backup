@@ -25,6 +25,8 @@ stored_events: list[np.NapCatEvent] = []
 async def consume_event(event) -> list[dict]:
     prompt: str = ''
     api_call_msg: list[dict] = []
+    async def get_user_nickname(user_id: str|int) -> str:
+        return (await env.npclient.get_stranger_info(user_id=str(user_id)))['nickname']
     match event:
         case np.MessageEvent():
             log.info("Msg RCVD")
@@ -39,13 +41,28 @@ async def consume_event(event) -> list[dict]:
             api_call_msg.append({'type':'text', 'text':prompt})
             api_call_msg.extend(qmsg.parse_msg_to_list(event.message))
         case np.PokeEvent(): # pyright: ignore[reportGeneralTypeIssues]
+            def parse_poke_raw(data, sender_name: str, target_name: str) -> str:
+                parts = []
+                uid_counter = 0
+                for item in data:
+                    if 'uid' in item:
+                        if uid_counter == 0:
+                            parts.append(str(sender_name))
+                        elif uid_counter == 1:
+                            parts.append(str(target_name))
+                        uid_counter += 1
+                    elif 'txt' in item:
+                        parts.append(item['txt'])
+                return ''.join(parts)
             log.info("PokeEvent")
+            sender_nickname: str = await get_user_nickname(event.sender_id)
             match event:
                 case np.FriendPokeEvent():
                     if event.sender_id != env.self_id:
-                        prompt = f"User {event.sender_id} poked you."
+                        prompt = f"User `{sender_nickname}` poked you in the chatbox. Interaction msg: {parse_poke_raw(event.raw_info, sender_nickname, '你')}"
                 case np.GroupPokeEvent():
-                    prompt = f'User {event.target_id} was poked in group {event.group_id}.'
+                    target_nickname: str = await get_user_nickname(event.target_id)
+                    prompt = f'{ 'You were' if event.target_id == env.self_id else f"User `{target_nickname}` was"} poked in group {event.group_id} in the chatbox. Interaction msg: {parse_poke_raw(event.raw_info, sender_nickname, '你' if event.target_id == env.self_id else target_nickname)}'
             api_call_msg.append({'type': 'text', 'text': prompt})
         case np.HeartbeatEvent():
             log.info("Heartbeat RCVD")
@@ -61,11 +78,14 @@ async def consume_event(event) -> list[dict]:
             pass
         case np.GroupNameEvent(): # pyright: ignore[reportGeneralTypeIssues]
             log.info("GroupNameEvent")
-            env.chatwindows[ChatWindow.ChatType.Group][str(event.group_id)] = ChatWindow(ChatWindow.ChatType.Group, str(event.group_id), event.name_new)
-            api_call_msg.append({'type': 'text', 'text':f"You are added to group `{event.name_new}`(id={event.group_id})."})
+            api_call_msg.append({'type': 'text', 'text':f"Group `{event.name_new}`(id={event.group_id}) is now named as {event.name_new}."})
         case np.GroupIncreaseEvent(): # pyright: ignore[reportGeneralTypeIssues]
             log.info("GroupIncreaseEvent")
-            prompt = f'User {event.user_id} is now in group {event.group_id}. You may welcome him/her. Use tool to get more info.'
+            if not str(event.group_id) in env.chatwindows[ChatWindow.ChatType.Group]:
+                env.chatwindows[ChatWindow.ChatType.Group][str(event.group_id)] = ChatWindow(ChatWindow.ChatType.Group, str(event.group_id), event.name_new)
+                prompt = f'You are now added to group {event.group_id}.'
+            else:
+                prompt = f'User {event.user_id} is added to group {event.group_id}. You may welcome him/her. Use tool to get more info.'
             api_call_msg.append({'type': 'text', 'text': prompt})
         case np.GroupDecreaseEvent(): # pyright: ignore[reportGeneralTypeIssues]
             log.info("GroupDecreaseEvent")

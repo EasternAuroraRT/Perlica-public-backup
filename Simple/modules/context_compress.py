@@ -8,7 +8,8 @@ from modules.logger import log
 
 
 def get_compressed_context(context: list[ChatCompletionMessageParam]) -> str:
-    model_name, base_url, apikey = config.get_multimodal_env()
+    model_config = config.get_multimodal_env()
+    model_name, base_url, apikey = model_config.model_name, model_config.base_url, model_config.apikey
     ai = OpenAI(api_key=apikey, base_url=base_url)
     log.info("Context Compressing Working...")
     sys_prompt = f'''

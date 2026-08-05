@@ -4,6 +4,7 @@ from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrar
 import logging as log
 from pathlib import Path
 import threading
+from datetime import datetime
 import asyncio
 import json
 from enum import * # pyright: ignore[reportWildcardImportFromLibrary]
@@ -12,6 +13,7 @@ import napcat as np
 import config
 from modules.chatwindow import ChatWindow, chat_type_str
 from modules.logger import log
+import simulation.biosim as bio
 
 np_ws_url = config.np_ws_url
 np_token = config.np_token
@@ -36,6 +38,10 @@ class Status(Enum):
     Sleeping = auto
 
 no_disturb_mode = False
+
+username_list: dict[int, str] = {}
+
+biosim_engine: Optional[bio.BioSim] = bio.BioSim() if bio else None
 
 async def init():
     async with npclient:
@@ -69,9 +75,10 @@ async def init():
             role_prompt += "\n私聊列表:\n"
         for friend in friend_list:
             user_id = friend.get("user_id")
+            user_nickname = friend.get("nickname")
+            username_list[user_id] = user_nickname
             if user_id == self_id:
                 continue
-            user_nickname = friend.get("nickname")
             role_prompt += f"id = {user_id}\tnickname = {user_nickname}\n"
             chatwindows[ChatWindow.ChatType.Private][str(user_id)] = ChatWindow(ChatWindow.ChatType.Private, str(user_id), user_nickname)
     # Initializing group chats
@@ -89,6 +96,8 @@ async def init():
     # Initializing conversation
         role_prompt += "\nCurrently not in any chat window.\n"
         sysprompt.append({"role": "system", "content": role_prompt})
+        if biosim_engine is not None:
+            biosim_engine.start()
 
 def reload():
     chatwindows.clear()
@@ -96,8 +105,15 @@ def reload():
     asyncio.run(init())
 
 def get_status_prompt() -> str:
-    result = f'''
+    window = active_chatwindow
+    return f'''
 当前激活聊天窗口：
-{chat_type_str[active_chatwindow.chat_type]}`{active_chatwindow.name}`({active_chatwindow.name})
+{chat_type_str[window.chat_type]}`{window.name}`({window.chat_id})
 '''
-    return result
+
+def is_active_time() -> bool:
+    # [TODO]
+    now = datetime.now()
+    start = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    end   = now.replace(hour=23, minute=0, second=0, microsecond=0)
+    return start<=now<=end

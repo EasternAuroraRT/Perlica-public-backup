@@ -7,26 +7,23 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import config
 
-private_key_pem = config.weather_private_key_pem
-project_id = config.weather_project_id
-credential_id = config.weather_credential_id
-host = config.weather_host
+_ALLOWED_DAILY_DAYS = (3, 7, 10, 15, 30)
 
 # ------------------------------------------------------------
 # 内部私有函数 —— JWT 鉴权与底层 API 调用
 # ------------------------------------------------------------
 
 def _generate_qweather_jwt():
-    private_key = load_pem_private_key(private_key_pem, password=None)
+    private_key = load_pem_private_key(config.weather_private_key_pem, password=None)
     current_time = int(time.time())
     payload = {
-        "sub": project_id,
+        "sub": config.weather_project_id,
         "iat": current_time - 30,
         "exp": current_time + 60
     }
     headers = {
         "alg": "EdDSA",
-        "kid": credential_id
+        "kid": config.weather_credential_id
     }
     token = jwt.encode(
         payload=payload,
@@ -45,7 +42,6 @@ def _get_authorization_header() -> dict:
 
 def _call_api(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """对和风天气API发起GET请求, 并解析结果"""
-    # 确保 host 带有协议前缀
     host_addr = config.weather_host
     if not host_addr.startswith("http"):
         host_addr = f"https://{host_addr}"
@@ -83,10 +79,8 @@ def get_current_weather_by_id(location_id: str) -> dict:
 
 
 def get_daily_weather_by_id(location_id: str, days: int = 7) -> list[dict]:
-    try:
-        cast(Literal[3,7,10,15,30], days)
-    except Exception:
-        raise ValueError(f"days 只能是 [3, 7, 10, 15, 30] 之一，当前为 {days}")
+    if days not in _ALLOWED_DAILY_DAYS:
+        raise ValueError(f"days 只能是 {list(_ALLOWED_DAILY_DAYS)} 之一，当前为 {days}")
     endpoint = f"/v7/weather/{days}d"
     data = _call_api(endpoint, {"location": location_id})
     return data.get("daily", [])

@@ -79,12 +79,15 @@ class ChatWindow(Sized):
     def get_info(self) -> str:
         return f"type: {self.chat_type}\nid: {self.chat_id}"
     
+    def _message_type(self) -> Literal["private", "group"]:
+        return "group" if self.chat_type is ChatWindow.ChatType.Group else "private"
+
     async def send(self) -> bool:
         if not self:
             return False
         log.info(f"Sending {chat_type_str[self.chat_type]} msg to {self.name}({self.chat_id})")
         response = await env.npclient.send_msg(
-            message_type=chat_type_str[self.chat_type],
+            message_type=self._message_type(),
             group_id=self.chat_id,
             user_id=self.chat_id,
             message=self.content.copy()
@@ -101,9 +104,10 @@ class ChatWindow(Sized):
         self.clear()
         return True
 
-chat_type_str: dict[ChatWindow.ChatType, Literal["private", "group"]] = {
+chat_type_str: dict[ChatWindow.ChatType, Literal["private", "group", "unknown"]] = {
     ChatWindow.ChatType.Private: "private",
     ChatWindow.ChatType.Group: "group",
+    ChatWindow.ChatType.Unknown: "unknown",
 }
 
 chat_type_str_cn: dict[ChatWindow.ChatType, str] = {

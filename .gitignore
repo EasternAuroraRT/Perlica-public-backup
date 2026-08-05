@@ -9,6 +9,7 @@ install.sh
 .vscode/
 sync.sh
 .kilo/
+*private_space*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

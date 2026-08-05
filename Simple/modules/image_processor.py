@@ -73,7 +73,8 @@ def get_image_description_from_base64(image64: str, user_prompt: str|None = None
         ]
     if user_prompt:
         msgs.append({'role': 'user', 'content': [{'type': 'text', 'text': user_prompt}]})
-    model_name, base_url, apikey = config.get_multimodal_env()
+    model_config = config.get_multimodal_env()
+    model_name, base_url, apikey = model_config.model_name, model_config.base_url, model_config.apikey
     log.debug(f"[get_image_base64_from_url] Adding multimodal chat: model={model_name}, url={base_url}")
     ai = OpenAI(api_key=apikey, base_url=base_url)
     chat = ai.chat.completions.create(

@@ -23,11 +23,18 @@ import modules.alarm as alarm
 from modules.image_processor import *
 from modules.infolib import search_knowledge_base
 
+T = TypeVar("T")
+def get_typed_arg(args: dict[str, Any], name: str, t: type[T] | tuple[type[T], ...], default: T | None = None) -> T:
+    value = args.get(name, default)
+    if not isinstance(value, t):
+        raise TypeError(f"参数 `{name}` 类型应为 `{getattr(t, '__name__', t)}`，收到 `{value!r}`")
+    return value
+
 # region Async Task Management
 _task_store: dict[str, dict] = {}
 _task_lock = threading.Lock()
 
-def _run_async(func: Callable[[dict], list], args: dict) -> list:
+def _tool_run_async(func: Callable[[dict], list], args: dict) -> list:
     """Start a long-running tool in a background thread, returning an immediate result with a task_id."""
     task_id = str(uuid.uuid4())
     with _task_lock:
@@ -61,9 +68,7 @@ def placeholder(_: dict) -> list:
     return [{'type': 'text', 'text': "当前工具正在开发中, 暂时无法正常工作"}]
 
 def get_tool_result(args: dict) ->list:
-    task_id = args.get('task_id')
-    if not task_id or not isinstance(task_id, str):
-        return [{'type': 'text', 'text': "请提供有效的 task_id。"}]
+    task_id = get_typed_arg(args, 'task_id', str)
     with _task_lock:
         entry = _task_store.get(task_id)
         if entry is None:
@@ -80,18 +85,14 @@ def get_tool_result(args: dict) ->list:
                 return [{'type': 'text', 'text': f"工具结果获取异常: {e}"}]
 
 def type_text(args: dict) -> list:
-    text = args.get('text')
     if not env.active_chatwindow:
         return [{'type': 'text', 'text': "当前未选择聊天窗口，请选择后重试。"}]
-    if text == None or not isinstance(text, str):
-        return [{'type': 'text', 'text': "Function didn't receive legal argument(s)."}]
+    text = get_typed_arg(args, 'text', str)
     env.active_chatwindow.type_txt(text)
     return [{'type': 'text', 'text': "已写入内容至当前聊天框, 需要时可调用`check_chatbox`检查聊天框全部内容."}]
 
 def type_del(args: dict) -> list:
-    num = args.get("delnum")
-    if not isinstance(num, int):
-        return [{'type': 'text', 'text': f"收到参数`{num}`但无法转换为`int`. 操作将不生效."}]
+    num = get_typed_arg(args, "delnum", int)
     env.active_chatwindow.type_del(num)
     return [{'type': 'text', 'text': "已删除指定数量内容. 注意: 部分内容可能被视作整体删除; 需要时可调用`check_chatbox`检查聊天框全部内容."}]
 
@@ -108,8 +109,7 @@ def send_msg(_: dict) -> list:
 # This tool call will be processed directly inside the chat loop.
 
 def recall_msg(args: dict) -> list:
-    msg_id = args.get('message_id')
-    assert isinstance(msg_id, int|str)
+    msg_id = get_typed_arg(args, 'message_id', (int, str))
     try:
         asyncio.run(env.npclient.delete_msg(message_id=msg_id))
     except Exception as e:
@@ -124,74 +124,49 @@ def find_cursor(_: dict) -> list:
     return [{'type': 'text', 'text': str(env.active_chatwindow.cursor)}]
 
 def switch_chat_window(args: dict) -> list:
-    type = args.get('type')
-    assert(isinstance(type, str))
-    id = args.get('id')
-    assert(isinstance(id, str))
+    type_str = get_typed_arg(args, 'type', str)
+    target_id = get_typed_arg(args, 'id', str)
     chat_type: ChatWindow.ChatType
     chat_history: str
-    match type:
+    match type_str:
         case 'private':
             chat_type = ChatWindow.ChatType.Private
-            chat_history = history.get_private_messages(id, 5)
+            chat_history = history.get_private_messages(target_id, 5)
         case 'group':
             chat_type = ChatWindow.ChatType.Group
-            chat_history = history.get_group_messages(id, 10)
+            chat_history = history.get_group_messages(target_id, 5)
         case _:
-            return [{'type': 'text', 'text': f"Unable to parse type `{type}`."}]
-    if id in env.chatwindows[chat_type]:
-        env.active_chatwindow = env.chatwindows[chat_type].get(id)
+            return [{'type': 'text', 'text': f"Unable to parse type `{type_str}`."}]
+    if target_id in env.chatwindows[chat_type]:
+        env.active_chatwindow = env.chatwindows[chat_type].get(target_id)
     else:
-        return [{'type': 'text', 'text': f"Target chat is not found with id `{id}`."}]
+        return [{'type': 'text', 'text': f"Target chat is not found with id `{target_id}`."}]
     return [{'type': 'text', 'text': "\n".join([f"History:\n{chat_history}", f"Chatbox:\n{str(env.active_chatwindow)}"])}]
 
 def get_image_by_url(args: dict) -> list:
-    def _get_image(a: dict) -> list:
-        url = a.get('url', '')
-        assert isinstance(url, str)
-        prompt = a.get('prompt')
-        assert isinstance(prompt, str|None)
-        result: str|None = None
-        try:
-            assert(url)
-            image_base64 = get_image_base64_from_url(url)
-            assert(image_base64)
-            if config.is_multimodal():
-                return [{'type': 'image_url', 'image_url':{'url':image_base64}}]
-            else:
-                result = get_image_description_from_base64(image_base64, prompt)
-                assert(result)
-        except Exception as e:
-            log.error(f"[tools->get_image_by_url] {e}")
-            return [{'type': 'text', 'text': f"Failed to get image from url: {url}, error: {e}"}]
+    url = get_typed_arg(args, 'url', str)
+    prompt = get_typed_arg(args, 'prompt', (str, type(None)), None)
+    image_b64 = get_image_base64_from_url(url)
+    try:
+        result = get_image_description_from_base64(image_b64, prompt)
         return [{'type': 'text', 'text': result}]
-    return _run_async(_get_image, args)
+    except Exception as e:
+        log.error(f"[tools->get_image_by_url] {e}")
+        return [{'type': 'text', 'text': f"Failed to get image from url: {url}\nError: {e}"}]
 
 def get_image_by_path(args: dict) -> list:
-    def _get_image(a: dict) -> list:
-        path = a.get('path', '')
-        assert isinstance(path, str)
-        prompt = a.get('prompt')
-        assert isinstance(prompt, str|None)
-        result: str|None = None
-        try:
-            assert(path)
-            image_base64 = get_image_base64_from_path(path)
-            assert(image_base64)
-            if config.is_multimodal():
-                return [{'type': 'image_url', 'image_url':{'url':image_base64}}]
-            else:
-                result = get_image_description_from_base64(image_base64, prompt)
-                assert(result)
-        except Exception as e:
-            log.error(f"[tools->get_image_by_path] {e}")
-            return [{'type': 'text', 'text': f"Failed to get image from path: {path}, error: {e}"}]
+    path = get_typed_arg(args, 'path', str)
+    prompt = get_typed_arg(args, 'prompt', (str, type(None)), None)
+    image_b64 = get_image_base64_from_path(path)
+    try:
+        result = get_image_description_from_base64(image_b64, prompt)
         return [{'type': 'text', 'text': result}]
-    return _run_async(_get_image, args)
+    except Exception as e:
+        log.error(f"[tools->get_image_by_path] {e}")
+        return [{'type': 'text', 'text': f"Failed to get image from path: {path}\nError: {e}"}]
 
 def get_history(args: dict) -> list:
-    count = args.get('count')
-    assert(isinstance(count, int))
+    count = get_typed_arg(args, 'count', int)
     result: str = ''
     match env.active_chatwindow.chat_type:
         case ChatWindow.ChatType.Private:
@@ -204,15 +179,15 @@ def get_history(args: dict) -> list:
 
 def get_current_time(args: dict) -> list:
     default_format = "%Y-%m-%d %H:%M:%S"
-    format = args.get("format")
-    if format == None or not isinstance(format, str):
-        format = default_format
+    fmt = args.get("format")
+    if not isinstance(fmt, str):
+        fmt = default_format
     result: str
     try:
-        result = datetime.now().strftime(format)
+        result = datetime.now().strftime(fmt)
     except (ValueError, TypeError) as e:
         log.error(f"[tools->get_current_time] {e}")
-        result = f"Invalid format: '{format}', using default.\n" + datetime.now().strftime(default_format)
+        result = f"Invalid format: '{fmt}', using default.\n" + datetime.now().strftime(default_format)
     return [{'type': 'text', 'text': result}]
 
 def append_diary(args: dict) -> list:
@@ -225,30 +200,26 @@ def get_random_value(_: dict) -> list:
     return [{'type': 'text', 'text': str(random.random())}]
 
 def set_timer(args: dict) -> list:
-    time = args.get('time')
-    assert(isinstance(time, float|int))
-    description = args.get('description')
-    assert(isinstance(description, str))
-    id = timer.set_timer(time, description)
+    duration = get_typed_arg(args, 'time', (float, int))
+    description = get_typed_arg(args, 'description', str)
+    id = timer.set_timer(duration, description)
     return [{'type': 'text', 'text': f'Timer {id} is set.'}]
 
 def set_alarm(args: dict) -> list:
-    time = args.get('time')
-    assert(isinstance(time, str))
-    loop = args.get('loop', 'once')
-    assert(loop in ['once', 'daily', 'weekly'])
-    about = args.get('description', '')
-    assert(isinstance(about, str))
+    time_str = get_typed_arg(args, 'time', str)
+    loop = get_typed_arg(args, 'loop', str, 'once')
+    if loop not in ('once', 'daily', 'weekly'):
+        raise ValueError(f"Invalid loop `{loop}`, expected once/daily/weekly")
+    about = get_typed_arg(args, 'description', str, '')
     try:
-        id = alarm.set_alarm(time, loop, about)
+        id = alarm.set_alarm(time_str, loop, about)
         return [{'type': 'text', 'text': f"Alarm {id} set successfully with {f'description `{about}`' if about else 'no description'}."}]
     except Exception as e:
         return [{'type': 'text', 'text': str(e)}]
 
 def cancel_timer(args: dict) -> list:
-    id = args.get('index')
-    assert(isinstance(id, str))
-    return [{'type': 'text', 'text': f"{f'Successfully cancelled timer {id}.' if timer.cancel_timer_by_id(id) else f'Failed to cancel timer {id}. Please check.'}"}]
+    timer_id = get_typed_arg(args, 'index', str)
+    return [{'type': 'text', 'text': f"{f'Successfully cancelled timer {timer_id}.' if timer.cancel_timer_by_id(timer_id) else f'Failed to cancel timer {timer_id}. Please check.'}"}]
 
 def list_timer(_: dict) -> list:
     return [{'type': 'text', 'text': str(timer.get_all_timers())}]
@@ -257,10 +228,9 @@ def list_alarms(_: dict) -> list:
     return [{'type': 'text', 'text': str(alarm.get_all_alarms())}]
 
 def cancel_alarm(args: dict) -> list:
-    id = args.get('index')
-    assert(isinstance(id, str))
-    alarm.cancel_alarm(id)
-    return [{'type': 'text', 'text': f'Alarm {id} is cancelled'}]
+    alarm_id = get_typed_arg(args, 'index', str)
+    alarm.cancel_alarm(alarm_id)
+    return [{'type': 'text', 'text': f'Alarm {alarm_id} is cancelled'}]
 
 def search_knowledge(args: dict) -> list:
     query = args.get('query')
@@ -316,19 +286,17 @@ def mv(args: dict) -> list:
     return [{'type': 'text', 'text': file_manager.mv(src, dst)}]
 
 def execute_pystring(args: dict) -> list:
-    return _run_async(lambda a: [{'type': 'text', 'text': se.execute_code(a.get('code',''))}], args)
+    return _tool_run_async(lambda a: [{'type': 'text', 'text': se.execute_code(a.get('code',''))}], args)
 
 def execute_pyfile(args: dict) -> list:
-    return _run_async(lambda a: [{'type': 'text', 'text': se.execute_file(a.get('path',''))}], args)
+    return _tool_run_async(lambda a: [{'type': 'text', 'text': se.execute_file(a.get('path',''))}], args)
 
 def get_current_weather(args: dict) -> list:
-    return _run_async(lambda a: [{'type': 'text', 'text': str(weather.get_current_weather(a.get('location','')))}], args)
+    return _tool_run_async(lambda a: [{'type': 'text', 'text': str(weather.get_current_weather(a.get('location','')))}], args)
 
 def send_poke(args: dict) -> list:
-    target = args.get('target_id')
-    assert(isinstance(target, str))
-    group = args.get('group_id', '')
-    assert(isinstance(group, str))
+    target = get_typed_arg(args, 'target_id', str)
+    group = get_typed_arg(args, 'group_id', str, '')
     if group:
         asyncio.run(env.npclient.send_poke(user_id=target, group_id=group))
     else:
@@ -337,13 +305,11 @@ def send_poke(args: dict) -> list:
     return [{'type': 'text', 'text': result}]
 
 def get_user_info(args: dict) -> list:
-    user_id = args.get('user_id')
-    assert(isinstance(user_id, str))
+    user_id = get_typed_arg(args, 'user_id', str)
     return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_stranger_info(user_id=user_id)))}]
 
 def get_msg_by_id(args: dict) -> list:
-    msg_id = args.get('id')
-    assert(isinstance(msg_id, int))
+    msg_id = get_typed_arg(args, 'id', int)
     return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_msg(message_id=msg_id)))}]
 
 def web_search(args: dict) -> List:
@@ -369,7 +335,7 @@ def web_search(args: dict) -> List:
         except Exception as e:
             # 任何异常都返回错误信息（不抛出异常）
             return [{"type": "text", "text": f"搜索时发生错误: {str(e)}"}]
-    return _run_async(_web_search, args)
+    return _tool_run_async(_web_search, args)
 
 def read_web(args: dict) -> list:
     # return placeholder(args)
@@ -390,22 +356,36 @@ def read_web(args: dict) -> list:
             return [{"type": "text", "text": content}]
         except Exception as e:
             return [{"type": "text", "text": str(e)}]
-    return _run_async(_read_web, args)
+    return _tool_run_async(_read_web, args)
 
 def set_no_disturb_on(args: dict) -> list:
-    time = args.get('time', 1440)
-    assert isinstance(time, int)
-    assert time > 0
+    minutes = get_typed_arg(args, 'time', int, 1440)
+    if minutes <= 0:
+        raise ValueError("time must be positive")
     env.no_disturb_mode = True
     def action():
         env.no_disturb_mode = False
-    timer = threading.Timer(time*60, action)
-    timer.daemon = True
-    return [{"type": "text", "text": f'No disturbing mode is ON and will be set to OFF automatically in {time} minute(s).'}]
+    disturber = threading.Timer(minutes*60, action)
+    disturber.daemon = True
+    disturber.start()
+    return [{"type": "text", "text": f'No disturbing mode is ON and will be set to OFF automatically in {minutes} minute(s).'}]
 
 def set_no_disturb_off(_: dict) -> list:
     env.no_disturb_mode = False
     return [{"type": "text", "text": 'No disturbing mode is set to OFF.'}]
+
+def download_file(args: dict) -> list:
+    url = get_typed_arg(args, 'url', str)
+    save_path = get_typed_arg(args, 'save_path', str, '/')
+    file_name = get_typed_arg(args, 'file_name', str)
+    def download(_) -> list:
+        r = requests.get(url=url, stream=True)
+        with open(Path(file_manager.get_root())/save_path/file_name, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=4096):
+                f.write(chunk)
+        result = f'文件已保存至"{save_path}".'
+        return [{"type": "text", "text": result}]
+    return _tool_run_async(download, {})
 
 # def read_qzone(args: dict) -> list:
 #     return placeholder(args)

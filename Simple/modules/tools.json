@@ -791,6 +791,66 @@
           "additionalProperties": false
         }
       }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "set_no_disturb_on",
+        "description": "打开勿扰模式",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "integer",
+              "description": "勿扰模式持续时长(分钟), 默认为一天(1440), 参数必须大于0."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "set_no_disturb_off",
+        "description": "关闭勿扰模式",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "download_file",
+        "description": "从指定位置下载文件.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "文件链接"
+            },
+            "save_path": {
+              "type": "string",
+              "description": "文件保存路径(default='/')"
+            },
+            "file_name": {
+              "type": "string",
+              "description": "保存文件名"
+            }
+          },
+          "required": [
+            "url",
+            "file_name"
+          ],
+          "additionalProperties": false
+        }
+      }
     }
   ]
 }

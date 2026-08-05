@@ -489,5 +489,28 @@
   "set_no_disturb_off": {
     "description": "关闭勿扰模式",
     "parameters": []
+  },
+  "download_file": {
+    "description": "从指定位置下载文件.",
+    "parameters": [
+      {
+        "name": "url",
+        "type": "string",
+        "description": "文件链接",
+        "required": true
+      },
+      {
+        "name": "save_path",
+        "type": "string",
+        "description": "文件保存路径(default='/')",
+        "required": false
+      },
+      {
+        "name": "file_name",
+        "type": "string",
+        "description": "保存文件名",
+        "required": true
+      }
+    ]
   }
 }

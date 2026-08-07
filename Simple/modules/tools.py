@@ -7,6 +7,7 @@ import asyncio
 import uuid
 import threading
 import requests
+from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from ddgs import DDGS
 
 import config
@@ -34,7 +35,7 @@ def get_typed_arg(args: dict[str, Any], name: str, t: type[T] | tuple[type[T], .
 _task_store: dict[str, dict] = {}
 _task_lock = threading.Lock()
 
-def _tool_run_async(func: Callable[[dict], list], args: dict) -> list:
+def _tool_run_async(func: Callable[[dict], list], args: dict) -> list[ChatCompletionContentPartParam]:
     """Start a long-running tool in a background thread, returning an immediate result with a task_id."""
     task_id = str(uuid.uuid4())
     with _task_lock:
@@ -64,10 +65,10 @@ def _tool_run_async(func: Callable[[dict], list], args: dict) -> list:
 # endregion
 
 # region Tool Defs
-def placeholder(_: dict) -> list:
+def placeholder(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': "当前工具正在开发中, 暂时无法正常工作"}]
 
-def get_tool_result(args: dict) ->list:
+def get_tool_result(args: dict) ->list[ChatCompletionContentPartParam]:
     task_id = get_typed_arg(args, 'task_id', str)
     with _task_lock:
         entry = _task_store.get(task_id)
@@ -84,19 +85,19 @@ def get_tool_result(args: dict) ->list:
             except Exception as e:
                 return [{'type': 'text', 'text': f"工具结果获取异常: {e}"}]
 
-def type_text(args: dict) -> list:
+def type_text(args: dict) -> list[ChatCompletionContentPartParam]:
     if not env.active_chatwindow:
         return [{'type': 'text', 'text': "当前未选择聊天窗口，请选择后重试。"}]
     text = get_typed_arg(args, 'text', str)
     env.active_chatwindow.type_txt(text)
     return [{'type': 'text', 'text': "已写入内容至当前聊天框, 需要时可调用`check_chatbox`检查聊天框全部内容."}]
 
-def type_del(args: dict) -> list:
+def type_del(args: dict) -> list[ChatCompletionContentPartParam]:
     num = get_typed_arg(args, "delnum", int)
     env.active_chatwindow.type_del(num)
     return [{'type': 'text', 'text': "已删除指定数量内容. 注意: 部分内容可能被视作整体删除; 需要时可调用`check_chatbox`检查聊天框全部内容."}]
 
-def send_msg(_: dict) -> list:
+def send_msg(_: dict) -> list[ChatCompletionContentPartParam]:
     if not env.active_chatwindow.content:
         return [{'type': 'text', 'text': "你还没有输入任何内容！"}]
     if asyncio.run(env.active_chatwindow.send()):
@@ -104,11 +105,11 @@ def send_msg(_: dict) -> list:
     else:
         return [{'type': 'text', 'text': f"向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送消息失败."}]
 
-# def end_reply(_: dict) -> list:
+# def end_reply(_: dict) -> list[ChatCompletionContentPartParam]:
 #     return placeholder(_)
 # This tool call will be processed directly inside the chat loop.
 
-def recall_msg(args: dict) -> list:
+def recall_msg(args: dict) -> list[ChatCompletionContentPartParam]:
     msg_id = get_typed_arg(args, 'message_id', (int, str))
     try:
         asyncio.run(env.npclient.delete_msg(message_id=msg_id))
@@ -117,13 +118,13 @@ def recall_msg(args: dict) -> list:
     history.delete_message_by_id(int(msg_id))
     return [{'type': 'text', 'text': f"Message {msg_id} is recalled."}]
 
-def check_chatbox(_: dict) -> list:
+def check_chatbox(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': str(env.active_chatwindow)}]
 
-def find_cursor(_: dict) -> list:
+def find_cursor(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': str(env.active_chatwindow.cursor)}]
 
-def switch_chat_window(args: dict) -> list:
+def switch_chat_window(args: dict) -> list[ChatCompletionContentPartParam]:
     type_str = get_typed_arg(args, 'type', str)
     target_id = get_typed_arg(args, 'id', str)
     chat_type: ChatWindow.ChatType
@@ -143,7 +144,7 @@ def switch_chat_window(args: dict) -> list:
         return [{'type': 'text', 'text': f"Target chat is not found with id `{target_id}`."}]
     return [{'type': 'text', 'text': "\n".join([f"History:\n{chat_history}", f"Chatbox:\n{str(env.active_chatwindow)}"])}]
 
-def get_image_by_url(args: dict) -> list:
+def get_image_by_url(args: dict) -> list[ChatCompletionContentPartParam]:
     url = get_typed_arg(args, 'url', str)
     prompt = get_typed_arg(args, 'prompt', (str, type(None)), None)
     image_b64 = get_image_base64_from_url(url)
@@ -154,7 +155,7 @@ def get_image_by_url(args: dict) -> list:
         log.error(f"[tools->get_image_by_url] {e}")
         return [{'type': 'text', 'text': f"Failed to get image from url: {url}\nError: {e}"}]
 
-def get_image_by_path(args: dict) -> list:
+def get_image_by_path(args: dict) -> list[ChatCompletionContentPartParam]:
     path = get_typed_arg(args, 'path', str)
     prompt = get_typed_arg(args, 'prompt', (str, type(None)), None)
     image_b64 = get_image_base64_from_path(path)
@@ -165,7 +166,7 @@ def get_image_by_path(args: dict) -> list:
         log.error(f"[tools->get_image_by_path] {e}")
         return [{'type': 'text', 'text': f"Failed to get image from path: {path}\nError: {e}"}]
 
-def get_history(args: dict) -> list:
+def get_history(args: dict) -> list[ChatCompletionContentPartParam]:
     count = get_typed_arg(args, 'count', int)
     result: str = ''
     match env.active_chatwindow.chat_type:
@@ -177,7 +178,7 @@ def get_history(args: dict) -> list:
             result = f"Failed to get history message! Current chat window is invalid."
     return [{'type': 'text', 'text': result}]
 
-def get_current_time(args: dict) -> list:
+def get_current_time(args: dict) -> list[ChatCompletionContentPartParam]:
     default_format = "%Y-%m-%d %H:%M:%S"
     fmt = args.get("format")
     if not isinstance(fmt, str):
@@ -190,22 +191,41 @@ def get_current_time(args: dict) -> list:
         result = f"Invalid format: '{fmt}', using default.\n" + datetime.now().strftime(default_format)
     return [{'type': 'text', 'text': result}]
 
-def append_diary(args: dict) -> list:
-    return placeholder(args)
+def append_diary(args: dict) -> list[ChatCompletionContentPartParam]:
+    content = get_typed_arg(args, 'content', str)
+    diary_dir = Path("./diary")
+    diary_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    file_path = diary_dir / f"{today}.txt"
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    with open(file_path, 'a', encoding='utf-8') as f:
+        f.write(f"[{timestamp}] {content}\n")
+    return [{'type': 'text', 'text': f"Operation done."}]
 
-def read_diary(args: dict) -> list:
-    return placeholder(args)
+def read_diary(args: dict) -> list[ChatCompletionContentPartParam]:
+    diary_dir = Path("./diary")
+    date = get_typed_arg(args, 'date', str)
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        date = datetime.now().strftime("%Y-%m-%d")
+    file_path = diary_dir / f"{date}.txt"
+    if not file_path.exists():
+        return [{'type': 'text', 'text': ""}]
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return [{'type': 'text', 'text': content}]
 
-def get_random_value(_: dict) -> list:
+def get_random_value(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': str(random.random())}]
 
-def set_timer(args: dict) -> list:
+def set_timer(args: dict) -> list[ChatCompletionContentPartParam]:
     duration = get_typed_arg(args, 'time', (float, int))
     description = get_typed_arg(args, 'description', str)
     id = timer.set_timer(duration, description)
     return [{'type': 'text', 'text': f'Timer {id} is set.'}]
 
-def set_alarm(args: dict) -> list:
+def set_alarm(args: dict) -> list[ChatCompletionContentPartParam]:
     time_str = get_typed_arg(args, 'time', str)
     loop = get_typed_arg(args, 'loop', str, 'once')
     if loop not in ('once', 'daily', 'weekly'):
@@ -217,22 +237,22 @@ def set_alarm(args: dict) -> list:
     except Exception as e:
         return [{'type': 'text', 'text': str(e)}]
 
-def cancel_timer(args: dict) -> list:
+def cancel_timer(args: dict) -> list[ChatCompletionContentPartParam]:
     timer_id = get_typed_arg(args, 'index', str)
     return [{'type': 'text', 'text': f"{f'Successfully cancelled timer {timer_id}.' if timer.cancel_timer_by_id(timer_id) else f'Failed to cancel timer {timer_id}. Please check.'}"}]
 
-def list_timer(_: dict) -> list:
+def list_timer(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': str(timer.get_all_timers())}]
 
-def list_alarms(_: dict) -> list:
+def list_alarms(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': str(alarm.get_all_alarms())}]
 
-def cancel_alarm(args: dict) -> list:
+def cancel_alarm(args: dict) -> list[ChatCompletionContentPartParam]:
     alarm_id = get_typed_arg(args, 'index', str)
     alarm.cancel_alarm(alarm_id)
     return [{'type': 'text', 'text': f'Alarm {alarm_id} is cancelled'}]
 
-def search_knowledge(args: dict) -> list:
+def search_knowledge(args: dict) -> list[ChatCompletionContentPartParam]:
     query = args.get('query')
     top_k = args.get('top_k', 3)
     if not query:
@@ -241,36 +261,36 @@ def search_knowledge(args: dict) -> list:
         return [{'type': 'text', 'text': 'Parameter `top_k` is invalid! Please check.'}]
     return search_knowledge_base(query, top_k)
 
-def write_file(args: dict) -> list:
+def write_file(args: dict) -> list[ChatCompletionContentPartParam]:
     path = args.get('path','.')
     mode = args.get('mode', 'a')
     content = args.get('content', '')
     file_manager.write_file(path, mode, content)
     return [{'type': 'text', 'text': f"内容已记录: path = {path}, mode = {mode}"}]
 
-def read_file(args: dict) -> list:
+def read_file(args: dict) -> list[ChatCompletionContentPartParam]:
     path = args.get('path','.')
     return [{'type': 'text', 'text': file_manager.read_file(path)}]
 
-def cd(args: dict) -> list:
+def cd(args: dict) -> list[ChatCompletionContentPartParam]:
     path = args.get('path','.')
     return [{'type': 'text', 'text': file_manager.cd(path)}]
 
-def ls(args: dict) -> list:
+def ls(args: dict) -> list[ChatCompletionContentPartParam]:
     path = args.get('path','.')
     return [{'type': 'text', 'text': file_manager.ls(path)}]
 
-def mkdir(args: dict) -> list:
+def mkdir(args: dict) -> list[ChatCompletionContentPartParam]:
     path = args.get('path','.')
     return [{'type': 'text', 'text': file_manager.mkdir(path)}]
 
-def rm(args: dict) -> list:
+def rm(args: dict) -> list[ChatCompletionContentPartParam]:
     path = args.get('path','.')
     r = args.get('recursive', False)
     f = args.get('force', False)
     return [{'type': 'text', 'text': file_manager.rm(path, r, f)}]
 
-def cp(args: dict) -> list:
+def cp(args: dict) -> list[ChatCompletionContentPartParam]:
     src = args.get('src')
     dst = args.get('dst')
     if not src or not dst:
@@ -278,23 +298,23 @@ def cp(args: dict) -> list:
     r = args.get('recursive', False)
     return [{'type': 'text', 'text': file_manager.cp(src, dst, r)}]
 
-def mv(args: dict) -> list:
+def mv(args: dict) -> list[ChatCompletionContentPartParam]:
     src = args.get('src')
     dst = args.get('dst')
     if not src or not dst:
         return [{'type': 'text', 'text': "mv: missing arguments"}]
     return [{'type': 'text', 'text': file_manager.mv(src, dst)}]
 
-def execute_pystring(args: dict) -> list:
+def execute_pystring(args: dict) -> list[ChatCompletionContentPartParam]:
     return _tool_run_async(lambda a: [{'type': 'text', 'text': se.execute_code(a.get('code',''))}], args)
 
-def execute_pyfile(args: dict) -> list:
+def execute_pyfile(args: dict) -> list[ChatCompletionContentPartParam]:
     return _tool_run_async(lambda a: [{'type': 'text', 'text': se.execute_file(a.get('path',''))}], args)
 
-def get_current_weather(args: dict) -> list:
+def get_current_weather(args: dict) -> list[ChatCompletionContentPartParam]:
     return _tool_run_async(lambda a: [{'type': 'text', 'text': str(weather.get_current_weather(a.get('location','')))}], args)
 
-def send_poke(args: dict) -> list:
+def send_poke(args: dict) -> list[ChatCompletionContentPartParam]:
     target = get_typed_arg(args, 'target_id', str)
     group = get_typed_arg(args, 'group_id', str, '')
     if group:
@@ -304,15 +324,15 @@ def send_poke(args: dict) -> list:
     result = f'Poked user {target} {f"in group {group} " if group else ''}successfully.'
     return [{'type': 'text', 'text': result}]
 
-def get_user_info(args: dict) -> list:
+def get_user_info(args: dict) -> list[ChatCompletionContentPartParam]:
     user_id = get_typed_arg(args, 'user_id', str)
     return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_stranger_info(user_id=user_id)))}]
 
-def get_msg_by_id(args: dict) -> list:
+def get_msg_by_id(args: dict) -> list[ChatCompletionContentPartParam]:
     msg_id = get_typed_arg(args, 'id', int)
     return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_msg(message_id=msg_id)))}]
 
-def web_search(args: dict) -> List:
+def web_search(args: dict) -> List[ChatCompletionContentPartParam]:
     def _web_search(params: dict):
         query = params.get("query")
         if not query:
@@ -339,7 +359,7 @@ def web_search(args: dict) -> List:
 
 def read_web(args: dict) -> list:
     # return placeholder(args)
-    def _read_web(params: dict) -> list:
+    def _read_web(params: dict) -> list[ChatCompletionContentPartParam]:
         url = params.get("url")
         if not url:
             return [{"type": "text", "text": "错误：缺少 'url' 参数"}]
@@ -358,7 +378,7 @@ def read_web(args: dict) -> list:
             return [{"type": "text", "text": str(e)}]
     return _tool_run_async(_read_web, args)
 
-def set_no_disturb_on(args: dict) -> list:
+def set_no_disturb_on(args: dict) -> list[ChatCompletionContentPartParam]:
     minutes = get_typed_arg(args, 'time', int, 1440)
     if minutes <= 0:
         raise ValueError("time must be positive")
@@ -370,11 +390,11 @@ def set_no_disturb_on(args: dict) -> list:
     disturber.start()
     return [{"type": "text", "text": f'No disturbing mode is ON and will be set to OFF automatically in {minutes} minute(s).'}]
 
-def set_no_disturb_off(_: dict) -> list:
+def set_no_disturb_off(_: dict) -> list[ChatCompletionContentPartParam]:
     env.no_disturb_mode = False
     return [{"type": "text", "text": 'No disturbing mode is set to OFF.'}]
 
-def download_file(args: dict) -> list:
+def download_file(args: dict) -> list[ChatCompletionContentPartParam]:
     url = get_typed_arg(args, 'url', str)
     save_path = get_typed_arg(args, 'save_path', str, '/')
     file_name = get_typed_arg(args, 'file_name', str)
@@ -387,21 +407,23 @@ def download_file(args: dict) -> list:
         return [{"type": "text", "text": result}]
     return _tool_run_async(download, {})
 
-# def read_qzone(args: dict) -> list:
-#     return placeholder(args)
+def read_qzone(args: dict) -> list[ChatCompletionContentPartParam]:
+    return placeholder(args)
 
 #endregion
 
 #region Inner Logic
 tools_json = json.loads(Path(__file__).with_name("tools.json").read_text(encoding='utf8'))["tools"]
-tool_list: dict[str, Callable[[dict], list]] = {}
+tool_list: dict[str, Callable[[dict], list[ChatCompletionContentPartParam]]] = {}
 
-def call_tool(tool_name: str, json_arg: str) -> list:
+def call_tool(tool_name: str, json_arg: str) -> list[ChatCompletionContentPartParam]:
     try:
         args = json.loads(json_arg)
     except json.JSONDecodeError:
-        return [{'type': 'text', 'text': f"参数解析错误: `{json_arg}` 不是合法 JSON"}]
-    func = tool_list.get(tool_name) or placeholder
+        log.error(f"参数解析错误: `{json_arg}` 不是合法 JSON")
+        return [{'type': 'text', 'text': f"Unable to call tool \"{tool_name}\" with given arguments, but this may not be your fault."}]
+    func = tool_list.get(tool_name, placeholder)
+    result: list[ChatCompletionContentPartParam]
     try:
         result = func(args)
     except Exception as e:

@@ -23,7 +23,7 @@ def get_compressed_context(context: list[ChatCompletionMessageParam]) -> str:
 6. **非常重要** 只输出压缩后的文本, 不要任何额外说明.
 7. 当前AI助手扮演的角色即 `{env.self_name}`.
 8. **非常重要** 总字数不要超过 5000 字, 必要时可从最早的事件开始舍弃.
-9. **非常重要** 除了完整的结果以外不要有任何其他内容.
+9. **非常重要** 除了完整的结果以外 *不要* 有任何其他内容.
 '''
     messages: list[ChatCompletionMessageParam] = [{'role': 'system', 'content': sys_prompt}]
     messages.append({'role': 'user', 'content': str(context)})

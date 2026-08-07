@@ -3,6 +3,7 @@ import asyncio
 import json
 from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 from pathlib import Path
+from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 
 from napcat import * # pyright: ignore[reportWildcardImportFromLibrary]
 import modules.env as env
@@ -43,7 +44,8 @@ def parse_msg_to_str(msg: tuple[Message | UnknownMessageSegment, ...]) -> str:
                   if seg.id:
                       result += f"Reply(id='{seg.id}', raw={asyncio.run(env.npclient.get_msg(message_id=int(seg.id)))})"
                 except Exception as e:
-                    result += f"Reply(id='{seg.id}' error: cannot find this message)"
+                    log.warning(f'[qmessage->parse_msg_to_str] When parsing Reply: cannot find msg{seg.id}. Info: {e}')
+                    result += f"Reply(id='{seg.id}' error: cannot find this message.)"
             case Face():
                 result += f"Face(id='{seg.id}', resultId='{seg.resultId}', chainCount={seg.chainCount}, {get_qface_info(int(seg.id))})"
             case File():
@@ -52,10 +54,8 @@ def parse_msg_to_str(msg: tuple[Message | UnknownMessageSegment, ...]) -> str:
                 result += str(seg)
     return result
 
-def parse_msg_to_list(msg: tuple[Message | UnknownMessageSegment, ...]) -> list[dict]:
-    result: list = []
-    result = [{"type": "text", "text": parse_msg_to_str(msg)}]
-    return result
+def parse_msg_to_list(msg: tuple[Message | UnknownMessageSegment, ...]) -> list[ChatCompletionContentPartParam]:
+    return [{"type": "text", "text": parse_msg_to_str(msg)}]
 
 def get_qface(emojiId: int) -> QFace:
     result: QFace|None = _qface_cache.get(emojiId)

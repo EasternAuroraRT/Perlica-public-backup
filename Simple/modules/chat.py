@@ -22,7 +22,7 @@ class ChatThreadData:
 chat_data1: ChatThreadData = ChatThreadData()
 
 
-def chat(last_prompt: str | list[ChatCompletionMessageParam], high_priority: bool = False) -> None:
+def chat(last_prompt: str | list[ChatCompletionContentPartParam], high_priority: bool = False) -> None:
     log.debug("Prompt:\n"+str(last_prompt))
     if high_priority:
         log.debug("Currently high priority task.")
@@ -62,7 +62,7 @@ def _compress_message(chat_thread_data: ChatThreadData) -> None:
         chat_thread_data.uncompressed_messages.clear()
 
 
-def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: Union[str, Iterable[ChatCompletionContentPartParam]], high_priority: bool) -> None:
+def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatCompletionContentPartParam], high_priority: bool) -> None:
     ai = OpenAI(api_key=config.apikey, base_url=config.base_url)
     my_id = _acquire_worker(cur_chat_data)
     # Initializing
@@ -144,7 +144,7 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: Union[str, Ite
                 log.info(f"[Tool Call] {name}\n[Arguments] {arguments}")
                 if name == 'end_reply':
                     should_end = True
-                    tool_call_result = [{'type': 'text', 'text': "Reply ended."}]
+                    tool_call_result: List[ChatCompletionContentPartParam] = [{'type': 'text', 'text': "Reply ended."}]
                 else:
                     try:
                         tool_call_result = tools.call_tool(name, arguments)

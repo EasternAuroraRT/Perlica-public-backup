@@ -10,17 +10,12 @@ import modules.env as env
 import modules.events as events
 from modules.logger import log
 
-stored_events: list[Dict[datetime, np.NapCatEvent]] = []
 
 async def main() -> None:
     await env.init()
     npclient = env.npclient
     async for event in npclient:
-        api_call_msg = []
-        if env.no_disturb_mode and not isinstance(event, np.HeartbeatEvent):
-            stored_events.append({datetime.now(): event})
-            continue
-        api_call_msg.extend(await events.consume_event(event))
+        api_call_msg = await events.consume_event(event)
         if api_call_msg:
             chat.chat(api_call_msg)
 

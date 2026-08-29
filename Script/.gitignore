@@ -1,15 +1,20 @@
 *.pyc
 
-tmp/
-NapCat.Shell/
+LogInfo
 npsdk/
-NapcatClient/
-install.sh
-*.pem
-.vscode/
-sync.sh
-.kilo/
-*private_space*
+npsdk-wsl/
+config copy.py
+config.json
+test.py
+memory/
+diary/*
+history/group/*
+history/private/*
+history/*.json
+working_cache/*
+private_space/
+cache/
+**/fz_wiki_data*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -2,11 +2,11 @@
 
 ## 如果你不是佩厨……
 
-去 [identity](Simple/modules/settings/identity) 把提示词改成你喜欢的角色就行了!
+去 [identity](Script/modules/settings/identity) 把提示词改成你喜欢的角色就行了!
 
 ## 开始之前……
 
-请参考 [config_example.json](Simple/config_example.json) 写一份 config.json 放在同一目录下.
+请参考 [config_example.json](Script/config_example.json) 写一份 config.json 放在同一目录下.
 
 > 自己先跑 [requirements.txt](requirements.txt) (∠・ω< )⌒★
 
@@ -21,19 +21,19 @@
 
 自行配置模型并向 config.json 填入配置项.
 
-> 参见 [config_example.json](Simple/config_example.json).
+> 参见 [config_example.json](Script/config_example.json).
 
 ## Tool Call
 
-[tool_manager.py](Simple/modules/tool_manager.py) 辅助 管理/添加 工具;
+[tool_manager.py](Script/modules/tool_manager.py) 辅助 管理/添加 工具;
 
-[tools_data.json](Simple/modules/tools_data.json) 更清晰的工具配置.
+[tools_data.json](Script/modules/tools_data.json) 更清晰的工具配置.
 
 ### Web Search
 
 不保证可用性. 如果有条件请自行更换方式.
 
-> 参见 [tools.py->web_search](Simple/modules/tools.py)
+> 参见 [tools.py->web_search](Script/modules/tools.py)
 
 ### Weather
 
@@ -43,7 +43,7 @@
 
 ### RAG
 
-运行前先跑一遍 [infolib_init.py](Simple/modules/infolib_init.py).
+运行前先跑一遍 [infolib_init.py](Script/modules/infolib_init.py).
 
 请参考代码自行配置 Embedding 模型.
 
@@ -51,7 +51,7 @@
 
 ### Logging
 
-自己去 [logger.py](Simple/modules/logger.py) 改配置.
+自己去 [logger.py](Script/modules/logger.py) 改配置.
 
 ## (^_^)
 
@@ -63,18 +63,18 @@ config.json 内所有配置支持热更新, 无需重启程序即可修改配置
 
 ### 项目架构设计
 
-[main.py](Simple/main.py) 是程序的入口. 主循环监听napcat事件并构造提示词, 随后调用chat模块生成响应.
+[main.py](Script/main.py) 是程序的入口. 主循环监听napcat事件并构造提示词, 随后调用chat模块生成响应.
 为了确保连续收到多条消息时不造成阻塞, chat的启动是并发的, 但采用了锁和打断设计确保同时只能做一件事情（就像你玩手机那样）而上下文得以保留.
 
 这个框架高度依赖 tool call (因为设计上就是佩丽卡在~~玩手机~~使用终端), 因此一定要配置支持的模型.
-于是核心功能代码在 [tools.py](Simple/modules/tools.py), 拓展功能主要就是往这里面写东西.
-[tool_manager.py](Simple/modules/tool_manager.py) 和 [tools_data.json](Simple/modules/tools_data.json) 是为了管理 [工具 json](Simple/modules/tools.json) 做的脚本和简化版资源, 毕竟 api 要的 tool 格式还是太繁琐了.
+于是核心功能代码在 [tools.py](Script/modules/tools.py), 拓展功能主要就是往这里面写东西.
+[tool_manager.py](Script/modules/tool_manager.py) 和 [tools_data.json](Script/modules/tools_data.json) 是为了管理 [工具 json](Script/modules/tools.json) 做的脚本和简化版资源, 毕竟 api 要的 tool 格式还是太繁琐了.
 其他模块则主要是对 tools 的具体实现。采用模块化设计是为了去耦合, 降低 tools.py 被直接改坏的风险,~~以及方便 vibe coding 隔离环境避免 ai 瞎改~~. 通过看 tools.py 你应当能大致了解每个模块是干什么的.
 
-但其中 [infolib.py](Simple/modules/infolib_init.py) 是为了管理角色知识库的代码, 每次更新知识库后应当跑一遍来生成搜索索引. 这个代码可以独立于项目运行; 知识库也可以运行时热更新 (代价是每次查都重新读取索引).
+但其中 [infolib.py](Script/modules/infolib_init.py) 是为了管理角色知识库的代码, 每次更新知识库后应当跑一遍来生成搜索索引. 这个代码可以独立于项目运行; 知识库也可以运行时热更新 (代价是每次查都重新读取索引).
 
-[tools.py](Simple/modules/tools.py) 提供了长耗时任务的解决方法, 这是为了避免工具调用直接阻塞对话.
-[logger.py](Simple/modules/logger.py) 定义了日志相关内容, 你可以改格式改输出方式改你想改的任何东西, 反正整个项目都用的那个.
+[tools.py](Script/modules/tools.py) 提供了长耗时任务的解决方法, 这是为了避免工具调用直接阻塞对话.
+[logger.py](Script/modules/logger.py) 定义了日志相关内容, 你可以改格式改输出方式改你想改的任何东西, 反正整个项目都用的那个.
 部分模块可能未完成. 项目仍处于持续开发阶段, 已有的内容也可能会有较大变更.
 
 部分模块是ai写的, 但我明确要求了接口和模块封闭性并通过了高强度实际使用和多次调试迭代.

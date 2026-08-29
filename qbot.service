@@ -1,0 +1,16 @@
+[Unit]
+Description=QBotPerlica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=perlica
+WorkingDirectory=/home/perlica/QBotPerlica/Script
+ExecStart=/home/perlica/QBotPerlica/npsdk/bin/python main.py
+# main.py 内部已有异常自重启循环, 这里只在真的退出时拉起
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

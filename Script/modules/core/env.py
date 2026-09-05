@@ -107,9 +107,9 @@ def get_status_prompt() -> str:
 '''
 
 def is_active_time() -> bool:
-    return True
+    # return True
     # [TODO]
     now = datetime.now()
-    start = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    start = now.replace(hour=6, minute=0, second=0, microsecond=0)
     end   = now.replace(hour=23, minute=0, second=0, microsecond=0)
     return start<=now<=end

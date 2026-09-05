@@ -27,6 +27,7 @@ from .impl import schedule
 from .impl import diary
 from .impl.lunar import get_lunar_info
 from .impl.image_processor import *
+from .impl import command
 
 T = TypeVar("T")
 def get_typed_arg(args: dict[str, Any], name: str, t: type[T] | tuple[type[T], ...], default: T | None = None) -> T:
@@ -110,7 +111,7 @@ def send_msg(_: dict) -> list[ChatCompletionContentPartParam]:
     else:
         return [{'type': 'text', 'text': f"向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送消息失败."}]
 
-# def end_reply(_: dict) -> list[ChatCompletionContentPartParam]:
+# def end_action(_: dict) -> list[ChatCompletionContentPartParam]:
 #     return placeholder(_)
 # This tool call will be processed directly inside the chat loop.
 
@@ -522,6 +523,21 @@ def download_file(args: dict) -> list[ChatCompletionContentPartParam]:
         result = f'文件已保存至"{save_path}".'
         return [{"type": "text", "text": result}]
     return _tool_run_async(download, {})
+
+def sys_cmd(args: dict) -> list[ChatCompletionContentPartParam]:
+    cmd = get_typed_arg(args, 'command', str)
+    is_fast_cmd = get_typed_arg(args, 'is_fast', bool, False)
+    def run_cmd(args: dict) -> list[ChatCompletionContentPartParam]:
+        cmd = args.get("command", "")
+        return [{"type": "text", "text": command.run_command(cmd)}]
+    if is_fast_cmd:
+        return run_cmd({"command": cmd})
+    else:
+        return _tool_run_async(run_cmd, {"command": cmd})
+
+def goto_sleep(_: dict) -> list[ChatCompletionContentPartParam]:
+    env.biosim_engine.force_sleep()
+    return [{"type": "text", "text": "You are going to sleep. End action and you will be asleep."}]
 
 # ---- New ----
 

@@ -18,7 +18,7 @@ class EventUrgency(Enum):
     Important = auto()  # ignored when resting
     Urgent = auto()     # always notify
 
-async def parse_event(event: NapCatEvent) -> tuple[list[ChatCompletionContentPartParam], EventUrgency]:
+async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[list[ChatCompletionContentPartParam], EventUrgency]:
     api_call_msg: list[ChatCompletionContentPartParam] = []
     event_urgency: EventUrgency = EventUrgency.Ignore
     async def get_user_nickname(user_id: int) -> str:
@@ -51,7 +51,7 @@ async def parse_event(event: NapCatEvent) -> tuple[list[ChatCompletionContentPar
                     log.error("[events->MessageEvent] Cannot parse MessageEvent")
                     raise RuntimeError("[events->MessageEvent] Cannot parse MessageEvent")
             api_call_msg.append({'type': 'text', 'text':prompt})
-            api_call_msg.extend(qmsg.parse_msg_to_list(event.message))
+            api_call_msg.extend(qmsg.parse_msg_to_list(event.message, multimodal))
             event_urgency = EventUrgency.Normal
         case PokeEvent():  # pyright: ignore[reportGeneralTypeIssues]
             def parse_poke_raw(data, sender_name: str, target_name: str) -> str:

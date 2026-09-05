@@ -2,6 +2,9 @@ import logging
 import copy
 from colorama import Fore, Style, Back, init
 
+log_level = logging.DEBUG
+# log_level = logging.INFO
+
 class ColoredFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None,
                  prefix_color_map=None,
@@ -63,8 +66,7 @@ class ColoredFormatter(logging.Formatter):
 
 # log = logging.getLogger()
 log = logging.getLogger('log')
-# log.setLevel(logging.INFO)
-log.setLevel(logging.DEBUG)
+log.setLevel(log_level)
 
 # 添加控制台输出（StreamHandler）
 console_handler = logging.StreamHandler()

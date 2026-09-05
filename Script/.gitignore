@@ -15,6 +15,7 @@ working_cache/*
 private_space/
 cache/
 **/fz_wiki_data*
+**/storage/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -12,7 +12,7 @@ def init(root_path: str) -> None:
     global _root, _cwd
     _root = os.path.abspath(root_path)
     os.makedirs(_root, exist_ok=True)
-    _cwd = ""
+    _cwd = "/home/perlica"
 
 def get_root() -> str:
     """返回根目录绝对路径"""

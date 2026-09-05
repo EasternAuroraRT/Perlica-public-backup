@@ -74,8 +74,8 @@
     {
       "type": "function",
       "function": {
-        "name": "end_reply",
-        "description": "结束回复。",
+        "name": "end_action",
+        "description": "结束本轮行动，直到下一次收到事件。",
         "parameters": {
           "type": "object",
           "properties": {},
@@ -997,6 +997,43 @@
             "url",
             "file_name"
           ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sys_cmd",
+        "description": "直接运行系统命令.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "需要执行的命令"
+            },
+            "is_fast": {
+              "type": "boolean",
+              "description": "是否为快速命令. 默认为 false, 将被视作长耗时任务. 若为 true, 将直接返回结果. 将完全遵照传入的值运行, 没有额外检查."
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "goto_sleep",
+        "description": "关闭终端并进入睡眠状态。可被闹钟叫醒或其他紧急事件叫醒。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
           "additionalProperties": false
         }
       }

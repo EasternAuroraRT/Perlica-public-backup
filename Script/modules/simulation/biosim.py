@@ -253,15 +253,15 @@ class CircadianStateMachine:
     # ---------- 查询接口 ----------
     def get_state(self) -> Dict[str, Any]:
         return {
-            "time": round(self.time, 1),
-            "sleep": self.sleep_state.value,
-            "activity": self.activity.value,
-            "hunger": self.hunger.value,
-            "mood": self.mood.value,
-            "energy": round(self.energy, 1),
-            "stress": round(self.stress, 1),
-            "sleep_duration": round(self.sleep_duration, 1),
-            "hours_since_eat": round(self.hunger_timer, 1),
+            "time": self.time,
+            "sleep": self.sleep_state,
+            "activity": self.activity,
+            "hunger": self.hunger,
+            "mood": self.mood,
+            "energy": self.energy,
+            "stress": self.stress,
+            "sleep_duration": self.sleep_duration,
+            "hours_since_eat": self.hunger_timer,
         }
 
     # ---------- 主动接口 ----------

@@ -390,8 +390,6 @@ def main(argv=None):
     print(f"   API: {args.api_base}")
     print(f"   输出: {output_dir}")
     print(f"   命名空间: {nss}")
-    if not args.quiet:
-        print("   说明: 数据来自 fz.wiki 后端 API（https://api.fz.wiki/api/v1），非 HTML 抓取")
 
     # 1) 索引
     index_by_key = {}

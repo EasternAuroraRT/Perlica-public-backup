@@ -36,8 +36,8 @@
     "description": "将当前文本框中的内容发送出去。",
     "parameters": []
   },
-  "end_reply": {
-    "description": "结束回复。",
+  "end_action": {
+    "description": "结束本轮行动，直到下一次收到事件。",
     "parameters": []
   },
   "recall_msg": {
@@ -612,5 +612,26 @@
         "required": true
       }
     ]
+  },
+  "sys_cmd": {
+    "description": "直接运行系统命令.",
+    "parameters": [
+      {
+        "name": "command",
+        "type": "string",
+        "description": "需要执行的命令",
+        "required": true
+      },
+      {
+        "name": "is_fast",
+        "type": "boolean",
+        "description": "是否为快速命令. 默认为 false, 将被视作长耗时任务. 若为 true, 将直接返回结果. 将完全遵照传入的值运行, 没有额外检查.",
+        "required": false
+      }
+    ]
+  },
+  "goto_sleep": {
+    "description": "关闭终端并进入睡眠状态。可被闹钟叫醒或其他紧急事件叫醒。",
+    "parameters": []
   }
 }

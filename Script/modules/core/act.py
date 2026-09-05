@@ -4,6 +4,7 @@ from openai import OpenAI
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
+import time
 
 import config # customized configuration
 import modules.tools as tools
@@ -89,15 +90,22 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
             reply: str = ''
             tool_calls_collector: dict[int, dict] = {}
             interrupted = False
-            stream = ai.chat.completions.create(
-                model=config.model_name,
-                messages=messages + compressing_messages + uncompressed_messages,
-                tools=tools.tools_json,
-                tool_choice="auto",
-                stream=True,
-                temperature=config.temperature,
-                extra_body={"thinking": {"type": "disabled"}}
-            )
+            while True:
+                try:
+                    stream = ai.chat.completions.create(
+                        model=config.model_name,
+                        messages=messages + compressing_messages + uncompressed_messages,
+                        tools=tools.tools_json,
+                        tool_choice="auto",
+                        stream=True,
+                        temperature=config.temperature,
+                        extra_body={"thinking": {"type": "disabled"}}
+                    )
+                    break
+                except Exception as e:
+                    sleeptime = 1
+                    log.error(f"{e} occured when creating api connection. Retrying in {sleeptime} second(s)...")
+                    time.sleep(sleeptime)
             # Dealing result
             for chunk in stream:
                 choice = chunk.choices[0]
@@ -129,22 +137,27 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
                     print()
                     log.debug(f"A round finished with reason {choice.finish_reason}\nLength of reply: {len(reply)}")
             tool_calls_list = [tool_calls_collector[i] for i in tool_calls_collector.keys()]
+            tool_call_results: list[ChatCompletionMessageParam] = []
             result_message: ChatCompletionMessageParam = {'role': 'assistant', 'content': reply}
             if interrupted:
                 uncompressed_messages.append(result_message)
                 break
             if tool_calls_list:
                 result_message['tool_calls'] = cast(list[ChatCompletionMessageToolCallUnionParam], tool_calls_list)
-            should_end = not tool_calls_list
+            else:
+                tool_call_results.append(cast(ChatCompletionMessageParam, {
+                    'role': 'user',
+                    'content': 'You have not called any tool. At least you should call end_action.',
+                }))
+            should_end = False
             # Tool calling
-            tool_call_results: list[ChatCompletionMessageParam] = []
             for tool_call in tool_calls_list:
                 name = tool_call['function']['name']
                 arguments = tool_call['function']['arguments']
                 log.info(f"[Tool Call] {name}\n[Arguments] {arguments}")
-                if name == 'end_reply':
+                if name == 'end_action':
                     should_end = True
-                    tool_call_result: List[ChatCompletionContentPartParam] = [{'type': 'text', 'text': "Reply ended."}]
+                    tool_call_result: List[ChatCompletionContentPartParam] = [{'type': 'text', 'text': "Action ended."}]
                 else:
                     try:
                         tool_call_result = tools.call_tool(name, arguments)
@@ -168,7 +181,7 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
             log.info("Too many messages. Trying to compress.")
             _compress_message(cur_chat_data)
     except Exception as e:
-        log.error(f"[chat->_chat_thread_func->chat failure] {e}")
+        log.error(f"[act->_chat_thread_func->chat failure] {e}")
         compressing_messages = compressing_bkup
         uncompressed_messages = uncompressed_bkup
     # Cleaning

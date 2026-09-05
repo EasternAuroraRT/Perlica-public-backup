@@ -10,10 +10,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 不是 perlica 就重新以 perlica 执行(保持 cwd 与脚本路径)
 if [ "$(id -un)" != "perlica" ]; then
+    echo "Enter password for Perlica:"
     exec su perlica -c "cd '$ROOT' && '$0'"
+else
+    echo "Welcome, Perlica."
 fi
 
-echo "这个脚本用于使用 perlica 用户权限启动程序"
+# echo "这个脚本用于使用 perlica 用户权限启动程序"
 
 # 关键: 必须在 Script/ 下运行, 这样 `import modules` / `import napcat` 才正确
 cd "$ROOT/Script"

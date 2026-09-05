@@ -10,6 +10,7 @@ install.sh
 sync.sh
 .kilo/
 *private_space*
+*.service
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

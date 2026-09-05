@@ -4,26 +4,38 @@ from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrar
 import asyncio
 import time
 from datetime import datetime
+import os, sys
 
 import napcat as np
+import config
 import modules.core.act as act
 import modules.core.env as env
 import modules.core.events as events
-from modules.core.logger import log
+from modules.core.logger import log, log_level, logging
+from modules.simulation import biosim
 
 
 unprocessed_event_msgs: list[ChatCompletionContentPartParam] = []
 
+class UserRestart(Exception):
+    pass
+
 async def main() -> None:
     await env.init()
     npclient = env.npclient
-    biosim = env.biosim_engine
+    biosim_engine = env.biosim_engine
     async for event in npclient:
+        if log_level == logging.DEBUG and isinstance(event, np.PokeEvent):
+            raise UserRestart
+        bio_state_description: list[ChatCompletionContentPartParam] = []
+        bio_state = biosim_engine.get_state()
+        bio_state_description.append({'type': "text", "text": f"Current state: {bio_state.get('sleep', biosim.SleepState.AWAKE).name}.\n"})
         should_reply: bool = False
         should_queue: bool = False
+        # active_mode = bio_state.get('sleep', biosim.SleepState.AWAKE) is biosim.SleepState.AWAKE
         active_mode = env.is_active_time()
         no_disturb_mode = env.no_disturb_mode
-        api_call_msg, urgency = await events.parse_event(event)
+        api_call_msg, urgency = await events.parse_event(event, config.model_config[config.using_model].is_multimodal)
         match urgency:
             case events.EventUrgency.Ignore:
                 should_reply = False
@@ -38,8 +50,12 @@ async def main() -> None:
                 should_reply = True
                 should_queue = False
         if should_reply:
-            unprocessed_event_msgs.extend(api_call_msg)
-            act.act(unprocessed_event_msgs.copy())
+            final_msg: list[ChatCompletionContentPartParam]
+            if not bio_state["sleep"] is biosim.SleepState.AWAKE:
+                biosim_engine.force_wake()
+                bio_state_description.append({'type': "text", "text": f"You are waken up forcely by following event.\n"})
+            final_msg = bio_state_description + unprocessed_event_msgs + api_call_msg
+            act.act(final_msg)
             unprocessed_event_msgs.clear()
         elif should_queue:
             delayed_msg: list[ChatCompletionContentPartParam] = [{'type':'text', 'text': f"The following one notification is sent at time {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}.\n"}]
@@ -51,9 +67,17 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    log.debug("Currently in debug mode. Poke to reload.")
     while True:
         try:
             asyncio.run(main())
+        except UserRestart:
+            log.warning("Restarting...")
+            try:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            except OSError as e:
+                log.error(f"[main] execv failed: {e}. Fallback to in-process rerun.")
+                time.sleep(1)
         except Exception as e:
             log.error(f"[main] {e}")
             time.sleep(1)

@@ -72,3 +72,4 @@ class BioState:
         import json
         with open(path, "r", encoding="utf-8") as file:
             return BioState.from_json(file.read())
+

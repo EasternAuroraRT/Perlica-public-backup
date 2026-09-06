@@ -42,7 +42,7 @@
 
 不保证可用性. 如果有条件请自行更换方式.
 
-> 联网搜索走 DuckDuckGo (`ddgs`), 抓网页正文走 Jina Reader, 均为后台异步执行. 参见 [tools/\_\_init\_\_.py->web_search/read_web](Script/modules/tools/__init__.py)
+> 联网搜索使用 DuckDuckGo (`ddgs`), 抓网页正文使用 Jina Reader, 均为后台异步执行. 参见 [tools/\_\_init\_\_.py->web_search/read_web](Script/modules/tools/__init__.py)
 
 ### Weather
 
@@ -59,9 +59,9 @@
     python -m modules.knowledge.infolib_init
 
 > 参见 [modules/knowledge/infolib_init.py](Script/modules/knowledge/infolib_init.py).
-> 数据管线见 [EndfieldLibrary/](Script/EndfieldLibrary/): [fz_wiki_sync/sync.py](Script/EndfieldLibrary/fz_wiki_sync/sync.py) 抓取终末地 Wiki 原文, [prepare_rag.py](Script/EndfieldLibrary/fz_wiki_sync/prepare_rag.py) 整理成 [rag_source](Script/EndfieldLibrary/rag_source) 里的 Markdown, 构建出的索引放在 [EndfieldLibrary/storage](Script/EndfieldLibrary/storage). Embedding 走本地 Ollama, 请按 [infolib_init.py](Script/modules/knowledge/infolib_init.py) 里的代码自行配置模型.
+> 数据管线见 [EndfieldLibrary/](Script/EndfieldLibrary/): [fz_wiki_sync/sync.py](Script/EndfieldLibrary/fz_wiki_sync/sync.py) 抓取终末地 Wiki 原文, [prepare_rag.py](Script/EndfieldLibrary/fz_wiki_sync/prepare_rag.py) 整理成 [rag_source](Script/EndfieldLibrary/rag_source) 里的 Markdown, 构建出的索引放在 [EndfieldLibrary/storage](Script/EndfieldLibrary/storage). Embedding 使用本地 Ollama, 请按 [infolib_init.py](Script/modules/knowledge/infolib_init.py) 里的代码自行配置模型.
 
-不配置不跑问题也不大~~, 就是佩丽卡查不了知识库会显得很无能~~.
+不配置不跑问题也不大 ~~, 就是佩丽卡查不了知识库会显得很无能~~ .
 
 > 索引是磁盘型紧凑存储 (二进制向量 + jsonl), 检索时只读 mmap, 不会整库占内存; 知识库在运行中重建后, 检索侧会自动重载索引.
 >
@@ -82,6 +82,8 @@ config.json 内所有配置支持热更新, 无需重启程序即可修改配置
 ### 项目架构设计
 
 [main.py](Script/main.py) 是程序的入口. 主循环监听 napcat 事件, 先由 [core/events.py](Script/modules/core/events.py) 把事件解析成"提示词片段"并标注紧急程度 (`Ignore` / `Normal` / `Important` / `Urgent`), 再决定立刻行动、攒起来等活跃时段再处理还是干脆忽略. 机器人有自己的"作息": 活跃时间窗口与勿扰模式之外, 还有后台线程一直在跑的"生物节律"模拟 ([simulation/biosim.py](Script/modules/simulation/biosim.py))——会困、会饿、有精力、压力和情绪, 紧急事件还能把它强行吵醒.
+
+> 注: 这个 "生物节律" 是当前正在设计开发的内容, 暂时没有完工, 因此不能很好的起作用.
 
 聊天部分的启动是并发的, 但采用锁和打断设计确保同时只能做一件事情 (就像你玩手机那样), 而上下文得以保留; 这部分在 [core/act.py](Script/modules/core/act.py). 消息攒多了, 会在后台把历史用模型压成长文摘要 ([core/context_compress.py](Script/modules/core/context_compress.py)), 避免把上下文窗口撑爆.
 

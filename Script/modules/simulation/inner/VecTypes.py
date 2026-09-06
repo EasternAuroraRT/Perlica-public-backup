@@ -164,3 +164,4 @@ class Vector(metaclass=VectorMeta):
             getattr(self, name) == getattr(other, name)
             for name in self._element_names
         )
+

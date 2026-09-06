@@ -4,11 +4,15 @@
 
 去 [identity](Script/modules/settings/identity) 把提示词改成你喜欢的角色就行了!
 
+> 人设提示词拆成多份文本, 按 [settings.json](Script/modules/settings/settings.json) 里声明的顺序拼接成系统提示词: `identity`(角色设定) / `operators`(干员) / `language`(语言风格) / `abouttools`(工具使用规范). 换角色基本只要动 `identity`, 其余按需保留或删减.
+
 ## 开始之前……
 
 请参考 [config_example.json](Script/config_example.json) 写一份 config.json 放在同一目录下.
 
 > 自己先跑 [requirements.txt](requirements.txt) (∠・ω< )⌒★
+>
+> config 有严格校验 (见 [config.py](Script/config.py)): 缺字段或填错类型会直接报错并指出具体是哪个键.
 
 ## NapCat
 
@@ -22,18 +26,23 @@
 自行配置模型并向 config.json 填入配置项.
 
 > 参见 [config_example.json](Script/config_example.json).
+> 一份 config.json 里可以放多套模型 (每套带 `multimodal` 标记). `using_model` 指定对话用的主模型; 多模态任务 (看图/看表情包/压缩长上下文) 会走 `using_multimodal` 指向的模型.
 
 ## Tool Call
 
-[tool_manager.py](Script/modules/tool_manager.py) 辅助 管理/添加 工具;
+工具相关的文件都收在 [tools/](Script/modules/tools/) 下:
 
-[tools_data.json](Script/modules/tools_data.json) 更清晰的工具配置.
+- [tools_data.json](Script/modules/tools/tools_data.json) — 更清晰的工具配置;
+- [tools/tools_manager.py](Script/modules/tools/tools_manager.py) — 交互式管理/添加工具, 并把 tools_data.json 导出成标准格式;
+- [tools.json](Script/modules/tools/tools.json) — API 实际使用的标准 tool 格式;
+- [tools/\_\_init\_\_.py](Script/modules/tools/__init__.py) — 工具定义与注册 (函数与 schema 一一对应);
+- [tools/impl/](Script/modules/tools/impl/) — 各工具的具体实现 (闹钟/倒计时/日程/日记/天气/文件/农历/图片/代码执行/系统命令等).
 
 ### Web Search
 
 不保证可用性. 如果有条件请自行更换方式.
 
-> 参见 [tools.py->web_search](Script/modules/tools.py)
+> 联网搜索走 DuckDuckGo (`ddgs`), 抓网页正文走 Jina Reader, 均为后台异步执行. 参见 [tools/\_\_init\_\_.py->web_search/read_web](Script/modules/tools/__init__.py)
 
 ### Weather
 
@@ -41,17 +50,26 @@
 参见 [和风天气开发者服务](https://dev.qweather.com/)
 自行配置后向 config.json 填入配置项.
 
+> 实现见 [tools/impl/weather.py](Script/modules/tools/impl/weather.py)
+
 ### RAG
 
-运行前先跑一遍 [infolib_init.py](Script/modules/infolib_init.py).
+首次运行或每次更新知识源后, 跑一遍构建脚本:
 
-请参考代码自行配置 Embedding 模型.
+    python -m modules.knowledge.infolib_init
 
-> 不配置不跑问题也不大~~, 就是佩丽卡查不了知识库会显得很无能~~.
+> 参见 [modules/knowledge/infolib_init.py](Script/modules/knowledge/infolib_init.py).
+> 数据管线见 [EndfieldLibrary/](Script/EndfieldLibrary/): [fz_wiki_sync/sync.py](Script/EndfieldLibrary/fz_wiki_sync/sync.py) 抓取终末地 Wiki 原文, [prepare_rag.py](Script/EndfieldLibrary/fz_wiki_sync/prepare_rag.py) 整理成 [rag_source](Script/EndfieldLibrary/rag_source) 里的 Markdown, 构建出的索引放在 [EndfieldLibrary/storage](Script/EndfieldLibrary/storage). Embedding 走本地 Ollama, 请按 [infolib_init.py](Script/modules/knowledge/infolib_init.py) 里的代码自行配置模型.
+
+不配置不跑问题也不大~~, 就是佩丽卡查不了知识库会显得很无能~~.
+
+> 索引是磁盘型紧凑存储 (二进制向量 + jsonl), 检索时只读 mmap, 不会整库占内存; 知识库在运行中重建后, 检索侧会自动重载索引.
+>
+> [rag_pdf.py](Script/modules/knowledge/rag_pdf.py) 是多模态 PDF 检索的尝试, 未完成、未启用.
 
 ### Logging
 
-自己去 [logger.py](Script/modules/logger.py) 改配置.
+自己去 [logger.py](Script/modules/core/logger.py) 改配置.
 
 ## (^_^)
 
@@ -63,18 +81,20 @@ config.json 内所有配置支持热更新, 无需重启程序即可修改配置
 
 ### 项目架构设计
 
-[main.py](Script/main.py) 是程序的入口. 主循环监听napcat事件并构造提示词, 随后调用chat模块生成响应.
-为了确保连续收到多条消息时不造成阻塞, chat的启动是并发的, 但采用了锁和打断设计确保同时只能做一件事情（就像你玩手机那样）而上下文得以保留.
+[main.py](Script/main.py) 是程序的入口. 主循环监听 napcat 事件, 先由 [core/events.py](Script/modules/core/events.py) 把事件解析成"提示词片段"并标注紧急程度 (`Ignore` / `Normal` / `Important` / `Urgent`), 再决定立刻行动、攒起来等活跃时段再处理还是干脆忽略. 机器人有自己的"作息": 活跃时间窗口与勿扰模式之外, 还有后台线程一直在跑的"生物节律"模拟 ([simulation/biosim.py](Script/modules/simulation/biosim.py))——会困、会饿、有精力、压力和情绪, 紧急事件还能把它强行吵醒.
 
-这个框架高度依赖 tool call (因为设计上就是佩丽卡在~~玩手机~~使用终端), 因此一定要配置支持的模型.
-于是核心功能代码在 [tools.py](Script/modules/tools.py), 拓展功能主要就是往这里面写东西.
-[tool_manager.py](Script/modules/tool_manager.py) 和 [tools_data.json](Script/modules/tools_data.json) 是为了管理 [工具 json](Script/modules/tools.json) 做的脚本和简化版资源, 毕竟 api 要的 tool 格式还是太繁琐了.
-其他模块则主要是对 tools 的具体实现。采用模块化设计是为了去耦合, 降低 tools.py 被直接改坏的风险,~~以及方便 vibe coding 隔离环境避免 ai 瞎改~~. 通过看 tools.py 你应当能大致了解每个模块是干什么的.
+聊天部分的启动是并发的, 但采用锁和打断设计确保同时只能做一件事情 (就像你玩手机那样), 而上下文得以保留; 这部分在 [core/act.py](Script/modules/core/act.py). 消息攒多了, 会在后台把历史用模型压成长文摘要 ([core/context_compress.py](Script/modules/core/context_compress.py)), 避免把上下文窗口撑爆.
 
-但其中 [infolib.py](Script/modules/infolib_init.py) 是为了管理角色知识库的代码, 每次更新知识库后应当跑一遍来生成搜索索引. 这个代码可以独立于项目运行; 知识库也可以运行时热更新 (代价是每次查都重新读取索引).
+这个框架高度依赖 tool call (因为设计上就是佩丽卡在~~玩手机~~使用终端), 因此一定要配置支持的模型. 工具的注册表在 [tools/\_\_init\_\_.py](Script/modules/tools/__init__.py), 具体实现按功能放在 [tools/impl/](Script/modules/tools/impl/) 下做隔离, 免得 [\_\_init\_\_.py](Script/modules/tools/__init__.py) 被直接改坏,~~以及方便 vibe coding 隔离环境避免 ai 瞎改~~. [tools_manager.py](Script/modules/tools/tools_manager.py) 和 [tools_data.json](Script/modules/tools/tools_data.json) 是为了管理 [tools.json](Script/modules/tools/tools.json) (api 要的标准 tool 格式) 做的脚本和简化版资源. 长耗时工具会放进后台线程跑, 先返回一个 `task_id`, 之后用 `get_tool_result` 取结果, 避免工具调用直接阻塞对话.
 
-[tools.py](Script/modules/tools.py) 提供了长耗时任务的解决方法, 这是为了避免工具调用直接阻塞对话.
-[logger.py](Script/modules/logger.py) 定义了日志相关内容, 你可以改格式改输出方式改你想改的任何东西, 反正整个项目都用的那个.
+模块大致分为:
+
+- [core/](Script/modules/core/) — 框架本体: [env.py](Script/modules/core/env.py) 全局状态与初始化, [act.py](Script/modules/core/act.py) 对话循环, [events.py](Script/modules/core/events.py) 事件解析, [history.py](Script/modules/core/history.py) 本地历史消息 (带索引, 重启不丢, 支持按 id 撤回/改), [qmessage.py](Script/modules/core/qmessage.py) QQ 消息段解析 (含引用/表情/图片), [chatwindow.py](Script/modules/core/chatwindow.py) "终端输入框", [logger.py](Script/modules/core/logger.py) 日志.
+- [knowledge/](Script/modules/knowledge/) — 角色知识库 (RAG) 的构建与检索, 代码可以独立于项目运行.
+- [settings/](Script/modules/settings/) — 人设/干员/语言/工具规范等提示词文本 (见文首).
+- [simulation/](Script/modules/simulation/) — 各种模拟: [biosim.py](Script/modules/simulation/biosim.py) 生物节律, [lifesim.py](Script/modules/simulation/lifesim.py) 文本世界引擎原型, [newbiosim.py](Script/modules/simulation/newbiosim.py) 未完成.
+- 运行数据与资源: [history/](Script/history) 聊天记录, [diary/](Script/diary) 日记, [private_space/](Script/private_space) 机器人的专属文件夹 (代码执行沙箱也只能在里面写), [Qface/](Script/Qface) QQ 表情资源 (多模态模型可以"看见"表情包), [EndfieldLibrary/](Script/EndfieldLibrary) 知识库数据.
+
 部分模块可能未完成. 项目仍处于持续开发阶段, 已有的内容也可能会有较大变更.
 
 部分模块是ai写的, 但我明确要求了接口和模块封闭性并通过了高强度实际使用和多次调试迭代.

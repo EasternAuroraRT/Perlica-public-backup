@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from modules.core.logger import log
+from config import config
 import modules.knowledge.infolib_init as infolib
 
 # ======== Config ======== #
@@ -180,6 +181,9 @@ def _query_request_dim(meta_dim: int) -> int | None:
 
 def search_knowledge_base(query: str, top_k: int = 3) -> list:
     global _matrix, _load_error, _next_attempt
+
+    if not config.enable_rag:
+        return [{"type": "text", "text": f"知识库不可用: 功能未启用"}]
 
     if not _ensure_index():
         return [{"type": "text", "text": f"知识库不可用: {_load_error or '加载失败'}"}]

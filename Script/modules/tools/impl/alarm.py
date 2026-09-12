@@ -4,6 +4,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta
 from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
+from pathlib import Path
 
 import modules.core.act as act
 from modules.core.logger import log
@@ -29,6 +30,7 @@ def _load_alarms() -> None:
     """从 JSON 文件载入闹钟数据并重新调度"""
     global _alarms
     if not os.path.exists(ALARM_FILE):
+        log.warning(f"[{__file__}->_load_alarms] Cannot find data `{Path(ALARM_FILE).absolute()}`")
         _alarms = {}
         return
 
@@ -68,6 +70,7 @@ def _save_alarms() -> None:
             'loop': info['loop'],
             'about': info['about'],
         }
+    os.makedirs(os.path.dirname(ALARM_FILE), exist_ok=True)
     with open(ALARM_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 

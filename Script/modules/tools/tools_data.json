@@ -613,6 +613,23 @@
       }
     ]
   },
+  "send_file": {
+    "description": "在当前聊天窗口发送文件.",
+    "parameters": [
+      {
+        "name": "file_path",
+        "type": "string",
+        "description": "文件本地路径(建议使用绝对路径)",
+        "required": true
+      },
+      {
+        "name": "file_name",
+        "type": "string",
+        "description": "要展示的文件名",
+        "required": false
+      }
+    ]
+  },
   "sys_cmd": {
     "description": "直接运行系统命令.",
     "parameters": [

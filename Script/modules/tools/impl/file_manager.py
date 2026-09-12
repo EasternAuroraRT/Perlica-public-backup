@@ -83,6 +83,7 @@ def pwd() -> str:
 def ls(path: str = "") -> str:
     error_str = f"ls: cannot access '{path}': No such file or directory"
     try:
+        cur_path = _resolve_path('')
         abs_path = _resolve_path(path)
     except PermissionError as e:
         return str(e)
@@ -90,7 +91,7 @@ def ls(path: str = "") -> str:
         return error_str
     entries = os.listdir(abs_path)
     entries.sort()
-    return "\n".join(entries)
+    return f"Current Dir: {cur_path}\n"+"\n".join(entries)
 
 def mkdir(path: str) -> str:
     error_permission_denied = f"mkdir: cannot create directory '{path}': Permission denied"

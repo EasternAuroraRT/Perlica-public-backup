@@ -5,6 +5,9 @@ from colorama import Fore, Style, Back, init
 log_level = logging.DEBUG
 # log_level = logging.INFO
 
+class UserRestart(Exception):
+    pass
+
 class ColoredFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None,
                  prefix_color_map=None,

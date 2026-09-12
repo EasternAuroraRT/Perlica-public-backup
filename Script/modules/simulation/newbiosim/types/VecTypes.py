@@ -82,13 +82,33 @@ class Vector(metaclass=VectorMeta):
         elements = getattr(type(self), "elements", ())
         if not elements:
             raise NotImplementedError(
-                "Vector is abstract: subclass it and declare a non-empty `elements` list"
+                "Vector is abstract: subclass it and declare a non-empty elements list"
             )
         for element in elements:
             setattr(self, element.name, element.default_value)
 
-    def _new(self) -> Vector:
+    # ---------- 内存 / 原地工具（热路径复用缓冲，不 new 新向量） ----------
+    def zero(self) -> "Vector":
+        for name in self._element_names:
+            setattr(self, name, 0.0)
+        return self
+
+    def _copy_from(self, other: "Vector") -> "Vector":
+        for name in self._element_names:
+            setattr(self, name, getattr(other, name))
+        return self
+
+    def add_scaled(self, other: "Vector", scale: float) -> "Vector":
+        for name in self._element_names:
+            setattr(self, name, getattr(self, name) + getattr(other, name) * scale)
+        return self
+
+    # ---------- 构造 / 拷贝 ----------
+    def _new(self) -> "Vector":
         return cast(Vector, object.__new__(type(self)))
+
+    def copy(self) -> "Vector":
+        return self._new()._copy_from(self)
 
     def __repr__(self) -> str:
         fields = ", ".join(
@@ -96,7 +116,7 @@ class Vector(metaclass=VectorMeta):
         )
         return f"{type(self).__name__}({fields})"
 
-    def _require_compatible(self, other: Any, op: str) -> Vector:
+    def _require_compatible(self, other: Any, op: str) -> "Vector":
         if type(self) is not type(other):
             raise TypeError(
                 f"unsupported operand type(s) for {op}: "
@@ -105,8 +125,8 @@ class Vector(metaclass=VectorMeta):
         return cast(Vector, other)
 
     def _elementwise(
-        self, other: Vector, op: str, fn: Callable[[float, float], float]
-    ) -> Vector:
+        self, other: "Vector", op: str, fn: Callable[[float, float], float]
+    ) -> "Vector":
         other = self._require_compatible(other, op)
         result = self._new()
         for name in self._element_names:
@@ -115,7 +135,7 @@ class Vector(metaclass=VectorMeta):
 
     def _scaled(
         self, scalar: float, op: str, fn: Callable[[float, float], float]
-    ) -> Vector:
+    ) -> "Vector":
         if not isinstance(scalar, (int, float)):
             raise TypeError(
                 f"unsupported operand type(s) for {op}: "
@@ -126,37 +146,71 @@ class Vector(metaclass=VectorMeta):
             setattr(result, name, fn(getattr(self, name), scalar))
         return result
 
-    def _transformed(self, fn: Callable[[float], float]) -> Vector:
+    def _transformed(self, fn: Callable[[float], float]) -> "Vector":
         result = self._new()
         for name in self._element_names:
             setattr(result, name, fn(getattr(self, name)))
         return result
 
-    def __add__(self, other: Vector) -> Vector:
+    # ---------- 二元运算（返回新向量） ----------
+    def __add__(self, other: "Vector") -> "Vector":
         return self._elementwise(other, "+", lambda a, b: a + b)
 
-    def __sub__(self, other: Vector) -> Vector:
+    def __sub__(self, other: "Vector") -> "Vector":
         return self._elementwise(other, "-", lambda a, b: a - b)
 
-    def __mul__(self, other: Any) -> Vector:
+    def __mul__(self, other: Any) -> "Vector":
         if isinstance(other, Vector):
             return self._elementwise(other, "*", lambda a, b: a * b)
         return self._scaled(other, "*", lambda a, s: a * s)
 
-    def __rmul__(self, other: Any) -> Vector:
+    def __rmul__(self, other: Any) -> "Vector":
         if isinstance(other, Vector):
             return NotImplemented
         return self._scaled(other, "*", lambda a, s: a * s)
 
-    def __truediv__(self, scalar: float) -> Vector:
+    def __truediv__(self, scalar: float) -> "Vector":
         return self._scaled(scalar, "/", lambda a, s: a / s)
 
-    def __neg__(self) -> Vector:
+    def __neg__(self) -> "Vector":
         return self._transformed(lambda v: -v)
 
-    def __pos__(self) -> Vector:
+    def __pos__(self) -> "Vector":
         return self._transformed(lambda v: +v)
 
+    # ---------- 原地运算（复用 self，不分配） ----------
+    def __iadd__(self, other: "Vector") -> "Vector":
+        other = self._require_compatible(other, "+=")
+        for name in self._element_names:
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+        return self
+
+    def __isub__(self, other: "Vector") -> "Vector":
+        other = self._require_compatible(other, "-=")
+        for name in self._element_names:
+            setattr(self, name, getattr(self, name) - getattr(other, name))
+        return self
+
+    def __imul__(self, other: Any) -> "Vector":
+        if isinstance(other, Vector):
+            other = self._require_compatible(other, "*=")
+            for name in self._element_names:
+                setattr(self, name, getattr(self, name) * getattr(other, name))
+        else:
+            if not isinstance(other, (int, float)):
+                raise TypeError("unsupported operand type(s) for *=: vector and scalar")
+            for name in self._element_names:
+                setattr(self, name, getattr(self, name) * other)
+        return self
+
+    def __itruediv__(self, scalar: float) -> "Vector":
+        if not isinstance(scalar, (int, float)):
+            raise TypeError("unsupported operand type(s) for /=: vector and scalar")
+        for name in self._element_names:
+            setattr(self, name, getattr(self, name) / scalar)
+        return self
+
+    # ---------- 比较 ----------
     def __eq__(self, other: Any) -> Any:
         if type(self) is not type(other):
             return NotImplemented

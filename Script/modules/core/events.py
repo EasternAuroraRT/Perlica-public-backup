@@ -1,15 +1,17 @@
 from __future__ import annotations
 from datetime import datetime
 from enum import Enum, unique, auto
+from logging import DEBUG
 from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 
 from napcat import * # pyright: ignore[reportWildcardImportFromLibrary]
+from config import config
 import modules.core.env as env
 import modules.core.qmessage as qmsg
 import modules.core.history as history
 from modules.core.chatwindow import ChatWindow
-from modules.core.logger import log
+from modules.core.logger import log, UserRestart, log_level
 
 @unique
 class EventUrgency(Enum):
@@ -38,21 +40,24 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
             api_call_msg.append({'type':'text', 'text': prompt})
             event_urgency = EventUrgency.Important
         case MessageEvent():
-            log.info("Msg RCVD")
-            log.debug(str(event.message))
-            match event:
-                case PrivateMessageEvent():
-                    history.store_private_message(event)
-                    prompt = f"Received private message from user `{event.sender.nickname}` (id:{event.sender.user_id}): "
-                case GroupMessageEvent():
-                    history.store_group_message(event)
-                    prompt = f"Received group message from user `{event.sender.nickname}` (id:{event.sender.user_id}) in group `{event.group_name}` (id:{event.group_id}): "
-                case _:
-                    log.error("[events->MessageEvent] Cannot parse MessageEvent")
-                    raise RuntimeError("[events->MessageEvent] Cannot parse MessageEvent")
-            api_call_msg.append({'type': 'text', 'text':prompt})
-            api_call_msg.extend(qmsg.parse_msg_to_list(event.message, multimodal))
-            event_urgency = EventUrgency.Normal
+            if not event.message:
+                event_urgency = EventUrgency.Ignore
+            else:
+                log.info("Msg RCVD")
+                log.debug(str(event.message))
+                match event:
+                    case PrivateMessageEvent():
+                        history.store_private_message(event)
+                        prompt = f"Received private message from user `{event.sender.nickname}` (id:{event.sender.user_id}): "
+                    case GroupMessageEvent():
+                        history.store_group_message(event)
+                        prompt = f"Received group message from user `{event.sender.nickname}` (id:{event.sender.user_id}) in group `{event.group_name}` (id:{event.group_id}): "
+                    case _:
+                        log.error("[events->MessageEvent] Cannot parse MessageEvent")
+                        raise RuntimeError("[events->MessageEvent] Cannot parse MessageEvent")
+                api_call_msg.append({'type': 'text', 'text':prompt})
+                api_call_msg.extend(qmsg.parse_msg_to_list(event.message, multimodal))
+                event_urgency = EventUrgency.Normal
         case PokeEvent():  # pyright: ignore[reportGeneralTypeIssues]
             def parse_poke_raw(data, sender_name: str, target_name: str) -> str:
                 parts = []
@@ -71,8 +76,10 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
             sender_nickname: str = await get_user_nickname(event.user_id)
             match event:
                 case FriendPokeEvent():
+                    if(log_level == DEBUG and int(event.sender_id) == config.manager_id):
+                        raise UserRestart
                     if event.sender_id != env.self_id:
-                        prompt = f"User `{sender_nickname}` double clicked your avatar in the chatbox. Interaction msg: {parse_poke_raw(event.raw_info, sender_nickname, '你')}"
+                        prompt = f"User `{sender_nickname}` double clicked your avatar in the chatbox (You may poke back as well). Interaction msg: {parse_poke_raw(event.raw_info, sender_nickname, '你')}"
                 case GroupPokeEvent():
                     target_nickname = await get_user_nickname(event.target_id)
                     prompt = ('Your avatar was' if event.target_id == env.self_id else f"{target_nickname}'s avatar was") + ' double clicked in group ' + f'{event.group_id}' + ' in the chatbox. Interaction msg: ' + parse_poke_raw(event.raw_info, sender_nickname, '你' if event.target_id == env.self_id else target_nickname)

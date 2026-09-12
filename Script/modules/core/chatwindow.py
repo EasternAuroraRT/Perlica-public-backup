@@ -76,6 +76,10 @@ class ChatWindow(Sized):
         self.content.insert(self.__cursor, np.Image(file=image_url))
         self.__cursor += 1
 
+    def add_file(self, file_url, file_name):
+            self.content.insert(self.__cursor, np.File(file=file_url, name=file_name))
+            self.__cursor += 1
+
     def get_info(self) -> str:
         return f"type: {self.chat_type}\nid: {self.chat_id}"
     

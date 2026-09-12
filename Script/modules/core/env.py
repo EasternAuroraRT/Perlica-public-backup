@@ -10,7 +10,7 @@ import json
 from enum import * # pyright: ignore[reportWildcardImportFromLibrary]
 
 import napcat as np
-import config
+from config import config
 from .chatwindow import ChatWindow, chat_type_str
 from .logger import log
 from ..simulation import biosim as bio

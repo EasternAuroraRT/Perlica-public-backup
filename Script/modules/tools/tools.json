@@ -1004,6 +1004,35 @@
     {
       "type": "function",
       "function": {
+        "name": "send_file",
+        "description": "发送私聊文件.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "description": "发送对象的id"
+            },
+            "file_path": {
+              "type": "string",
+              "description": "文件本地路径(建议使用绝对路径)"
+            },
+            "file_name": {
+              "type": "string",
+              "description": "要展示的文件名"
+            }
+          },
+          "required": [
+            "user_id",
+            "file_path"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
         "name": "sys_cmd",
         "description": "直接运行系统命令.",
         "parameters": {

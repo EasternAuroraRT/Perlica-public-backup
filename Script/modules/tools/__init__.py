@@ -10,8 +10,10 @@ import threading
 import requests
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from ddgs import DDGS
+import shutil
+import os
 
-import config
+from config import config
 from napcat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from modules.core.logger import log
 import modules.core.env as env # global status and variant
@@ -23,6 +25,7 @@ from .impl import file_manager
 from .impl import weather
 from .impl import timer
 from .impl import alarm
+from .impl import file_server
 from .impl import schedule
 from .impl import diary
 from .impl.lunar import get_lunar_info
@@ -523,6 +526,25 @@ def download_file(args: dict) -> list[ChatCompletionContentPartParam]:
         result = f'文件已保存至"{save_path}".'
         return [{"type": "text", "text": result}]
     return _tool_run_async(download, {})
+
+def send_file(args: dict) -> list[ChatCompletionContentPartParam]:
+    # return placeholder(args)
+    file_path = get_typed_arg(args, 'file_path', str)
+    path: Path = Path(file_path)
+    file_name = get_typed_arg(args, 'file_name', str, path.name)
+    result: str = ''
+    try:
+        src = Path(file_path).resolve()
+        url = file_server.publish(src)
+        log.info(f"File url = {url}")
+        env.active_chatwindow.add_file(url, file_name)
+        asyncio.run(env.active_chatwindow.send())
+        result = f'File `{path.name}` uploaded successfully.'
+    except Exception as e:
+        log.error(f"[{__file__}->send_file] Failed to upload file `{file_path}`.\n{e}")
+        result = f'Failed to upload file `{file_path}`.\n{e}'
+    return [{"type": "text", "text": result}]
+
 
 def sys_cmd(args: dict) -> list[ChatCompletionContentPartParam]:
     cmd = get_typed_arg(args, 'command', str)

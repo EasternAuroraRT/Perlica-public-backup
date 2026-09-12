@@ -7,26 +7,21 @@ from datetime import datetime
 import os, sys
 
 import napcat as np
-import config
+from config import config
 import modules.core.act as act
 import modules.core.env as env
 import modules.core.events as events
-from modules.core.logger import log, log_level, logging
+from modules.core.logger import log, log_level, logging, UserRestart
 from modules.simulation import biosim
 
 
 unprocessed_event_msgs: list[ChatCompletionContentPartParam] = []
-
-class UserRestart(Exception):
-    pass
 
 async def main() -> None:
     await env.init()
     npclient = env.npclient
     biosim_engine = env.biosim_engine
     async for event in npclient:
-        if log_level == logging.DEBUG and isinstance(event, np.PokeEvent):
-            raise UserRestart
         bio_state_description: list[ChatCompletionContentPartParam] = []
         bio_state = biosim_engine.get_state()
         bio_state_description.append({'type': "text", "text": f"Current state: {bio_state.get('sleep', biosim.SleepState.AWAKE).name}.\n"})

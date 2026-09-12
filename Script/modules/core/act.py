@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 import time
 
-import config # customized configuration
+from config import config # customized configuration
 import modules.tools as tools
 import modules.core.env as env # global status and variant
 from modules.core.logger import log

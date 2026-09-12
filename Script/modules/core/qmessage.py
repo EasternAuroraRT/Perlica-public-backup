@@ -7,7 +7,7 @@ from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrar
 
 from napcat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from . import env
-import config
+from config import config
 from . import history
 from .logger import log
 from ..tools.impl.image_processor import get_image_base64_from_url, get_image_base64_from_path

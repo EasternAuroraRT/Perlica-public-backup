@@ -2,7 +2,7 @@ from openai import OpenAI
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 
-import config # customized configuration
+from config import config # customized configuration
 import modules.core.env as env # global status and variant
 from modules.core.logger import log
 

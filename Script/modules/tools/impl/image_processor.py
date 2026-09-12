@@ -3,7 +3,7 @@ import base64
 from openai import OpenAI
 
 from modules.core.logger import log
-import config
+from config import config
 
 def get_image_base64_from_url(url: str, as_data_uri: bool = True) -> str:
     log.debug("Getting base64...")

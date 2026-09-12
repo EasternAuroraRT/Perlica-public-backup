@@ -5,7 +5,7 @@ from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-import config
+from config import config
 
 _ALLOWED_DAILY_DAYS = (3, 7, 10, 15, 30)
 

@@ -648,7 +648,53 @@
     ]
   },
   "goto_sleep": {
-    "description": "关闭终端并进入睡眠状态。可被闹钟叫醒或其他紧急事件叫醒。",
+    "description": "去睡觉。睡着后精力会自行恢复，可被闹钟或其他紧急事件叫醒。",
+    "parameters": []
+  },
+  "get_self_bio_state": {
+    "description": "查看自己当前的身体状态：睡眠/活动/饥饿/情绪，以及能量/饱腹/心情/压力。想知道自己现在什么状态、能不能做某事时调用。",
+    "parameters": []
+  },
+  "wake_up": {
+    "description": "主动醒来（起床）。仅在睡着时可用。",
+    "parameters": []
+  },
+  "eat": {
+    "description": "吃点东西。饱腹是立刻的，血糖和能量随消化慢慢上来；吃得多消化得久。",
+    "parameters": [
+      {
+        "name": "food",
+        "type": "string",
+        "description": "吃了什么，例如「小蛋糕」「一碗面」。",
+        "required": true
+      },
+      {
+        "name": "amount",
+        "type": "number",
+        "description": "份数，默认 1。例如两个小蛋糕就填 2。",
+        "required": false
+      }
+    ]
+  },
+  "exercise": {
+    "description": "运动。会在给定时间内持续消耗体力，并让身体进入活跃状态。",
+    "parameters": [
+      {
+        "name": "kind",
+        "type": "string",
+        "description": "做了什么运动，例如「散步」「跑步」「俯卧撑」。",
+        "required": true
+      },
+      {
+        "name": "minutes",
+        "type": "number",
+        "description": "做了多久（分钟），默认 20。",
+        "required": false
+      }
+    ]
+  },
+  "stop_exercise": {
+    "description": "中途停止运动。",
     "parameters": []
   }
 }

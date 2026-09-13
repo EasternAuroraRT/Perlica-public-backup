@@ -34,9 +34,25 @@ sysprompt: list[ChatCompletionMessageParam] = [] # Do not easily read or write t
 
 no_disturb_mode = False
 
+# 睡着 / 静音期间积压的事件消息（与 main.py、alarm.py 共享）
+pending_event_msgs: list[ChatCompletionContentPartParam] = []
+
+
+def take_pending() -> list[ChatCompletionContentPartParam]:
+    """取走积压的事件消息（取完即清空）。"""
+    taken = pending_event_msgs.copy()
+    pending_event_msgs.clear()
+    return taken
+
 username_list: dict[int, str] = {}
 
-biosim_engine: bio.BioSimEngine = bio.BioSimEngine()
+def _now_hour() -> float:
+    """当前时刻的小数小时，精确到分钟。"""
+    now = datetime.now()
+    return now.hour + now.minute / 60.0
+
+
+biosim_engine: bio.BioSimEngine = bio.BioSimEngine(start_hour=_now_hour())
 
 async def init():
     async with npclient:
@@ -101,15 +117,9 @@ def reload():
 
 def get_status_prompt() -> str:
     window = active_chatwindow
-    return f'''
-当前激活聊天窗口：
+    return f'''当前激活聊天窗口：
 {chat_type_str[window.chat_type]}`{window.name}`({window.chat_id})
 '''
 
 def is_active_time() -> bool:
-    # return True
-    # [TODO]
-    now = datetime.now()
-    start = now.replace(hour=6, minute=0, second=0, microsecond=0)
-    end   = now.replace(hour=23, minute=0, second=0, microsecond=0)
-    return start<=now<=end
+    return biosim_engine.observe().sleep is bio.SleepState.AWAKE

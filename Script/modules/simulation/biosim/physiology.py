@@ -1,11 +1,11 @@
 """常驻生理效果：每个连续维度自述变化率，查表而非 if 链。"""
 from __future__ import annotations
 
-from .types import BioState, StateVec, Influence
-from .types import SleepState, ActivityLevel, HungerState, MoodState
-from .enums import ControlKind
-from .core import Effect, Influence
 from .config import BioSimConfig
+from .types import Influence, Tick
+from .types import SleepState, ActivityLevel, GlycemiaState, HungerState, MoodState
+from .enums import ControlKind
+from .core import Effect
 
 _ENERGY_RATE = {
     SleepState.AWAKE: lambda c: -c.energy_awake_cost,
@@ -15,8 +15,39 @@ _ENERGY_RATE = {
     SleepState.REM: lambda c: c.energy_sleep_recover,
 }
 
+# 血糖低时额外掉能量：饿着更累
+_ENERGY_GLYCEMIA = {
+    GlycemiaState.HIGH: lambda c: 0.0,
+    GlycemiaState.NORMAL: lambda c: 0.0,
+    GlycemiaState.LOW: lambda c: -c.energy_low_glycemia_cost,
+}
+
+# 血糖消耗：清醒时快，睡眠时慢
+_GLUCOSE_RATE = {
+    SleepState.AWAKE: lambda c: -c.glucose_decay_per_hour,
+    SleepState.DOZING: lambda c: -c.glucose_decay_per_hour * c.glucose_sleep_decay_factor,
+    SleepState.LIGHT: lambda c: -c.glucose_decay_per_hour * c.glucose_sleep_decay_factor,
+    SleepState.DEEP: lambda c: -c.glucose_decay_per_hour * c.glucose_sleep_decay_factor,
+    SleepState.REM: lambda c: -c.glucose_decay_per_hour * c.glucose_sleep_decay_factor,
+}
+
+# 血糖自身也分档调：高了压得快，低了肝糖原顶上（否则会一路掉到 0）
+_GLUCOSE_BAND = {
+    GlycemiaState.HIGH: lambda c: c.glucose_decay_high_factor,
+    GlycemiaState.NORMAL: lambda c: 1.0,
+    GlycemiaState.LOW: lambda c: c.glucose_decay_low_factor,
+}
+
+# 胃排空速度：血糖高时饱得久，血糖低时掉得快
+_FULLNESS_RATE = {
+    GlycemiaState.HIGH: lambda c: -c.fullness_decay_per_hour * c.fullness_decay_high_factor,
+    GlycemiaState.NORMAL: lambda c: -c.fullness_decay_per_hour,
+    GlycemiaState.LOW: lambda c: -c.fullness_decay_per_hour * c.fullness_decay_low_factor,
+}
+
 
 class EnergyDynamics(Effect):
+    """能量：按睡眠相位回/耗，血糖过低时额外掉。"""
     name = "energy"
     control = ControlKind.AUTONOMIC
 
@@ -25,11 +56,28 @@ class EnergyDynamics(Effect):
         self._inf = Influence()
 
     def _compute_influence(self, state, cfg, tick):
-        self._inf.delta.energy = _ENERGY_RATE[state.sleep](cfg)
+        glycemia = glycemia_of(state.current_state.glucose, cfg)
+        self._inf.delta.energy = _ENERGY_RATE[state.sleep](cfg) + _ENERGY_GLYCEMIA[glycemia](cfg)
+        return self._inf
+
+
+class GlucoseDynamics(Effect):
+    """血糖：持续被消耗，睡眠时消耗慢；补上来靠消化（进食效果）。"""
+    name = "glucose"
+    control = ControlKind.AUTONOMIC
+
+    def __init__(self, cfg: BioSimConfig, params=None) -> None:
+        super().__init__(cfg, params)
+        self._inf = Influence()
+
+    def _compute_influence(self, state, cfg, tick):
+        glycemia = glycemia_of(state.current_state.glucose, cfg)
+        self._inf.delta.glucose = _GLUCOSE_RATE[state.sleep](cfg) * _GLUCOSE_BAND[glycemia](cfg)
         return self._inf
 
 
 class FullnessDynamics(Effect):
+    """饱腹：胃里装了多少。下降速度绑在血糖浓度上，不是固定斜率。"""
     name = "fullness"
     control = ControlKind.AUTONOMIC
 
@@ -38,7 +86,8 @@ class FullnessDynamics(Effect):
         self._inf = Influence()
 
     def _compute_influence(self, state, cfg, tick):
-        self._inf.delta.fullness = -cfg.fullness_decay_per_hour
+        glycemia = glycemia_of(state.current_state.glucose, cfg)
+        self._inf.delta.fullness = _FULLNESS_RATE[glycemia](cfg)
         return self._inf
 
 
@@ -91,6 +140,14 @@ class MoodDynamics(Effect):
 
 
 # --- 连续值 -> 离散枚举 的语义映射 ---
+
+def glycemia_of(glucose: float, cfg) -> GlycemiaState:
+    if glucose >= cfg.glucose_high_threshold:
+        return GlycemiaState.HIGH
+    if glucose <= cfg.glucose_low_threshold:
+        return GlycemiaState.LOW
+    return GlycemiaState.NORMAL
+
 
 def hunger_of(fullness: float, cfg) -> HungerState:
     if fullness >= cfg.fullness_full_threshold:

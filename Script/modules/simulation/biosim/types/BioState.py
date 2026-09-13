@@ -1,25 +1,28 @@
 from pathlib import Path
 
-from .VecTypes import Vector, Dimension
+from .Vector import Vector, Dimension
 from ..bio_enums import SleepState, ActivityLevel
 
 
 class StateVec(Vector):
-    """生物状态的连续维度向量：energy / fullness / mood。"""
+    """生物状态的连续维度向量：energy / fullness / mood / glucose。"""
     elements = [
         Dimension("energy"),
         Dimension("fullness"),
         Dimension("mood"),
+        Dimension("glucose"),
     ]
     def __init__(self, *,
                  energy: float = 0,
                  fullness: float = 0,
                  mood: float = 0,
+                 glucose: float = 0,
                  ) -> None:
         super().__init__()
         self.energy = energy
         self.fullness = fullness
         self.mood = mood
+        self.glucose = glucose
 
 
 class BioState:
@@ -50,6 +53,7 @@ class BioState:
     clock_hour: float
     elapsed_hours: float
     sleep_duration: float
+    last_sleep_duration: float
     doze_timer: float
     exercise_timer: float
 

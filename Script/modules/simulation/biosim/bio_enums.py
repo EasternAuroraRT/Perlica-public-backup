@@ -28,3 +28,9 @@ class MoodState(Enum):
     NEUTRAL = "neutral"
     HAPPY = "happy"
 
+
+class GlycemiaState(Enum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+

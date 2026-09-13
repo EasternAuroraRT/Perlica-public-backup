@@ -12,12 +12,22 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$(id -un)" != "perlica" ]; then
     echo "Enter password for Perlica:"
     exec su perlica -c "cd '$ROOT' && '$0'"
-else
-    echo "Welcome, Perlica."
 fi
 
 # echo "这个脚本用于使用 perlica 用户权限启动程序"
 
 # 关键: 必须在 Script/ 下运行, 这样 `import modules` / `import napcat` 才正确
 cd "$ROOT/Script"
-exec "$ROOT/npsdk/bin/python" main.py
+echo "Welcome, Perlica."
+
+# main.py 退出码 0 表示主动结束 (Ctrl+C / SIGTERM), 到此为止;
+# 非 0 说明是异常退出或需要重启 (比如 debug 快速重启时 execv 失败), 等一秒重来.
+while true; do
+    code=0
+    "$ROOT/npsdk/bin/python" main.py || code=$?
+    if [ "$code" -eq 0 ]; then
+        break
+    fi
+    echo "main.py exited with code $code, restarting in 1s..."
+    sleep 1
+done

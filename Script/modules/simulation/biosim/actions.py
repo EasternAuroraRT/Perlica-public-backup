@@ -3,10 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from Script.modules.simulation.newbiosim.config import BioSimConfig
-
-from .types import BioState, StateVec, Influence
-from .types import SleepState, ActivityLevel, HungerState, MoodState
+from .config import BioSimConfig
+from .types import BioState, Influence, Tick
+from .types import SleepState, ActivityLevel
 from .enums import ControlKind
 from .core import Effect, effect
 
@@ -39,28 +38,33 @@ class WakeParams:
 
 @effect(EatParams)
 class DigestEffect(Effect):
-    """进食：消化期持续抬升饱腹/能量/心情；autonomic，不可取消/不可外部打断。"""
+    """进食：吃下去当场把胃装满（instant），之后才由消化把血糖/能量/心情抬上来。
+
+    饱腹的下降不归这里管 —— 那是 FullnessDynamics 按血糖浓度决定的胃排空速度。
+    吃这件事没有不允许的时候，所以不覆盖 refusal（基类默认允许）。
+    """
     name = "eat"
     control = ControlKind.AUTONOMIC
-    when = classmethod(lambda cls, s, c: True)
 
-    def __init__(self, cfg, params):
+    def __init__(self, cfg: BioSimConfig, params: EatParams) -> None:
         super().__init__(cfg, params)
         p = params
         self.remaining = cfg.digest_duration * p.portion
-        self._fullness_rate = cfg.digest_fullness_gain * p.portion / max(self.remaining, 1e-9)
+        self._glucose_rate = cfg.digest_glucose_gain * p.portion * p.quality / max(self.remaining, 1e-9)
         self._energy_rate = cfg.digest_energy_gain * p.quality / max(self.remaining, 1e-9)
         self._mood_rate = cfg.digest_mood_gain * min(p.portion, 0.8) / max(self.remaining, 1e-9)
         self._inf = Influence()
+        # 腹部饱了：体积是立刻占住的，不等消化
+        self._inf.instant.fullness = cfg.digest_fullness_gain * p.portion
 
-    def _compute_influence(self, state, cfg, tick):
+    def _compute_influence(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> Influence:
         self.remaining -= tick.dt
-        self._inf.delta.fullness = self._fullness_rate
+        self._inf.delta.glucose = self._glucose_rate
         self._inf.delta.energy = self._energy_rate
         self._inf.delta.mood = self._mood_rate
         return self._inf
 
-    def alive(self, state, cfg, tick):
+    def alive(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> bool:
         return self.remaining > 0
 
 
@@ -69,22 +73,29 @@ class ExerciseEffect(Effect):
     """运动：持续能耗 + 切活跃相位；volitional，可自主动手取消。"""
     name = "exercise"
     control = ControlKind.VOLITIONAL
-    when = classmethod(lambda cls, s, c: s.sleep is SleepState.AWAKE)
 
-    def __init__(self, cfg, params):
+    @classmethod
+    def refusal(cls, state: BioState, cfg: BioSimConfig) -> str | None:
+        if state.sleep is SleepState.AWAKE:
+            return None
+        return "你还躺着，现在动不了。"
+
+    def __init__(self, cfg: BioSimConfig, params: ExerciseParams) -> None:
         super().__init__(cfg, params)
         self.remaining = params.minutes / 60.0
         self._energy_rate = cfg.exercise_energy_rate * params.intensity
+        self._glucose_rate = cfg.exercise_glucose_rate * params.intensity
         self._inf = Influence()
 
-    def _compute_influence(self, state, cfg, tick):
+    def _compute_influence(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> Influence:
         self.remaining -= tick.dt
         self._inf.delta.energy = -self._energy_rate
+        self._inf.delta.glucose = -self._glucose_rate
         self._inf.aspects["activity"] = ActivityLevel.ACTIVE
         self._inf.aspects["exercise_timer"] = cfg.exercise_cooldown
         return self._inf
 
-    def alive(self, state, cfg, tick):
+    def alive(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> bool:
         return self.remaining > 0
 
 
@@ -94,19 +105,26 @@ class SleepEffect(Effect):
     name = "sleep"
     control = ControlKind.AUTONOMIC
     interruptible = True
-    when = classmethod(lambda cls, s, c: s.sleep in (SleepState.AWAKE, SleepState.DOZING))
 
-    def __init__(self, cfg: BioSimConfig, params=None) -> None:
+    @classmethod
+    def refusal(cls, state: BioState, cfg: BioSimConfig) -> str | None:
+        if state.sleep in (SleepState.AWAKE, SleepState.DOZING):
+            return None
+        return "你已经睡着了，不用再睡。"
+
+    def __init__(self, cfg: BioSimConfig, params: SleepParams | None = None) -> None:
         super().__init__(cfg, params)
         self._inf = Influence()
+        self._slept = 0.0
 
-    def _compute_influence(self, state, cfg, tick):
+    def _compute_influence(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> Influence:
         if state.sleep is SleepState.AWAKE:
             self._inf.aspects["sleep"] = SleepState.LIGHT
             self._inf.aspects["sleep_duration"] = 0.0
             self._inf.aspects["doze_timer"] = 0.0
             self._inf.aspects["exercise_timer"] = 0.0
             return self._inf
+        self._slept += tick.dt
         if state.sleep in (SleepState.LIGHT, SleepState.DEEP, SleepState.REM):
             sd = state.sleep_duration + tick.dt
             self._inf.aspects["sleep_duration"] = sd
@@ -127,10 +145,12 @@ class SleepEffect(Effect):
                 self._inf.aspects["doze_timer"] = 0.0
         return self._inf
 
-    def alive(self, state, cfg, tick):
+    def alive(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> bool:
         return state.sleep is not SleepState.AWAKE
 
-    def on_expire(self, state, cfg, tick):
+    def on_expire(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> None:
+        if self._slept > 0:
+            state.set_aspect("last_sleep_duration", self._slept)
         state.set_aspect("sleep", SleepState.AWAKE)
         state.set_aspect("sleep_duration", 0.0)
         state.set_aspect("doze_timer", 0.0)
@@ -142,15 +162,19 @@ class WakeEffect(Effect):
     name = "wake"
     control = ControlKind.VOLITIONAL
     persistent = False
-    when = classmethod(lambda cls, s, c: s.sleep is not SleepState.AWAKE)
 
-    def __init__(self, cfg: BioSimConfig, params=None) -> None:
+    @classmethod
+    def refusal(cls, state: BioState, cfg: BioSimConfig) -> str | None:
+        if state.sleep is SleepState.AWAKE:
+            return "你本来就醒着。"
+        return None
+
+    def __init__(self, cfg: BioSimConfig, params: WakeParams | None = None) -> None:
         super().__init__(cfg, params)
         self._inf = Influence()
 
-    def _compute_influence(self, state, cfg, tick):
+    def _compute_influence(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> Influence:
         self._inf.aspects["sleep"] = SleepState.AWAKE
         self._inf.aspects["sleep_duration"] = 0.0
         self._inf.aspects["doze_timer"] = 0.0
         return self._inf
-

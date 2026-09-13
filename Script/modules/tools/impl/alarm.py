@@ -22,7 +22,16 @@ _timers: Dict[str, threading.Timer] = {}   # id (UUID) -> Timer 对象
 def on_alarm_triggered(alarm_id: str) -> None:
     about = _alarms.get(alarm_id, {}).get('about', 'None')
     log.info(f"Alarm {alarm_id} is ringing!\nDescription: {about}")
-    act.act(f"Alarm {alarm_id} is ringing! Description: {about}")
+    # 闹钟把角色从睡眠里叫醒：睡眠是少有的可被外界打断的内在行为
+    pending: list = []
+    try:
+        import modules.core.env as env
+        from modules.simulation import biosim
+        env.biosim_engine.interrupt("sleep", by=biosim.WakeSource.ALARM)
+        pending = env.take_pending()  # 睡着期间积压的消息，一并交给它
+    except Exception as e:
+        log.error(f"[alarm->on_alarm_triggered->wake] {e}")
+    act.act(pending + [{"type": "text", "text": f"Alarm {alarm_id} is ringing! Description: {about}"}])
 
 
 # ==================== 持久化 ====================

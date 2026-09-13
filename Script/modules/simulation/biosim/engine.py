@@ -10,35 +10,53 @@ from .types.Tick import Tick
 from .core import Effect, _EFFECTS
 from .enums import ControlKind, WakeSource
 from . import actions  # noqa: F401  触发动作注册
-from .physiology import EnergyDynamics, FullnessDynamics, StressDynamics, MoodDynamics, hunger_of, mood_of
+from .physiology import (EnergyDynamics, GlucoseDynamics, FullnessDynamics, StressDynamics, MoodDynamics,
+                         hunger_of, mood_of, glycemia_of)
+from .observation import Observation
 
 
 class BioSimEngine:
-    """中心化执行者：汇总影响、门控、积分、钳制、回收。"""
+    """中心化执行者：汇总影响、门控、积分、钳制、回收。
 
-    _BASE = (EnergyDynamics, FullnessDynamics, StressDynamics, MoodDynamics)
+    常驻效果在构造时按 BASE_EFFECTS 实例化一次；连续维度的初始值与上下限按
+    "<名>_initial / _min / _max" 的约定从配置里取 —— 加一个维度只要动
+    StateVec.elements 和 config.py，引擎本身不用改。
 
-    def __init__(self, config=None, start_hour=8.0, update_interval=0.1, time_scale=1.0):
+    base_effects 可以整组换掉常驻模拟项（黑箱化的入口：换模拟不换接口）。
+    """
+
+    BASE_EFFECTS = (EnergyDynamics, GlucoseDynamics, FullnessDynamics, StressDynamics, MoodDynamics)
+
+    def __init__(self, config=None, start_hour=8.0, update_interval=0.1, time_scale=1.0,
+                 base_effects: tuple[type[Effect], ...] | None = None):
         self.cfg = config if config is not None else default_config()
         self.update_interval = update_interval
         self.time_scale = time_scale
 
-        energy = self.cfg.energy_max * 0.8
+        self._bounds = tuple(
+            (d.name, getattr(self.cfg, d.name + "_min"), getattr(self.cfg, d.name + "_max"))
+            for d in StateVec.elements
+        )
+        initial = StateVec(**{d.name: getattr(self.cfg, d.name + "_initial")
+                              for d in StateVec.elements})
+
         self._bio = BioState(
-            initial_state=StateVec(energy=energy, fullness=self.cfg.fullness_max, mood=50.0),
+            initial_state=initial,
             sleep=SleepState.AWAKE,
             activity=ActivityLevel.MODERATE,
             stress=0.0,
             clock_hour=start_hour % 24.0,
             elapsed_hours=0.0,
             sleep_duration=0.0,
+            last_sleep_duration=0.0,
             doze_timer=0.0,
             exercise_timer=0.0,
         )
 
         self._tick = Tick()
         self._net = StateVec()
-        self._effects: list[Effect] = [cls(self.cfg) for cls in self._BASE]
+        resident = self.BASE_EFFECTS if base_effects is None else base_effects
+        self._effects: list[Effect] = [cls(self.cfg) for cls in resident]
 
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
@@ -48,75 +66,83 @@ class BioSimEngine:
         self._last_sim_hours = 0.0
 
     # ---------- 状态查询 ----------
-    @property
-    def bio(self) -> BioState:
-        with self._lock:
-            return self._bio
-
-    @property
-    def current(self) -> StateVec:
-        with self._lock:
-            s = self._bio.current_state
-            return StateVec(energy=s.energy, fullness=s.fullness, mood=s.mood)
-
-    def snapshot(self) -> dict:
+    def observe(self) -> Observation:
+        """类型化读模型：核心只交数据，怎么措辞是消费方的事。"""
         with self._lock:
             st = self._bio.current_state
-            return {
-                "time": self._bio.clock_hour,
-                "elapsed_hours": self._bio.elapsed_hours,
-                "sleep": self._bio.sleep,
-                "activity": self._bio.activity,
-                "hunger": hunger_of(st.fullness, self.cfg),
-                "mood": mood_of(st.mood, self.cfg),
-                "energy": st.energy,
-                "fullness": st.fullness,
-                "mood_score": st.mood,
-                "stress": self._bio.stress,
-                "sleep_duration": self._bio.sleep_duration,
-            }
+            return Observation(
+                sleep=self._bio.sleep,
+                activity=self._bio.activity,
+                hunger=hunger_of(st.fullness, self.cfg),
+                mood=mood_of(st.mood, self.cfg),
+                glycemia=glycemia_of(st.glucose, self.cfg),
+                energy=st.energy,
+                fullness=st.fullness,
+                mood_score=st.mood,
+                glucose=st.glucose,
+                stress=self._bio.stress,
+                time=self._bio.clock_hour,
+                elapsed_hours=self._bio.elapsed_hours,
+                sleep_duration=self._bio.sleep_duration,
+                last_sleep_duration=self._bio.last_sleep_duration,
+            )
 
     # ---------- 动作 ----------
     def available_actions(self) -> list[str]:
         with self._lock:
             return [cls.name for _t, cls in _EFFECTS.items()
-                    if cls.when is None or cls.when(self._bio, self.cfg)]
+                    if cls.refusal(self._bio, self.cfg) is None]
+
+    def act_by_name(self, action: str, **params) -> None:
+        """按动作名下达命令（使用方的语言：名字 + 参数）。"""
+        for params_type, effect_type in _EFFECTS.items():
+            if effect_type.name == action:
+                self.act(params_type(**params))
+                return
+        raise ValueError(f"unknown action: {action!r}")
 
     def act(self, params) -> None:
         with self._lock:
             cls = _EFFECTS.get(type(params))
             if cls is None:
                 raise ValueError(f"no effect for {type(params).__name__}")
-            if not (cls.when is None or cls.when(self._bio, self.cfg)):
-                raise ValueError(f"action {cls.name!r} not allowed now")
+            reason = cls.refusal(self._bio, self.cfg)
+            if reason is not None:
+                raise ValueError(reason)
+            # 下达那一刻 dt=0：效果在这里只做落地动作，不消耗任何时间
+            self._tick.set(0.0, self._bio.clock_hour, self._bio.elapsed_hours, self.time_scale)
             eff = cls(self.cfg, params)
             inf = eff.influence(self._bio, self.cfg, self._tick)
             for k, v in inf.aspects.items():
                 self._bio.set_aspect(k, v)
+            self._bio.current_state += inf.instant
+            inf.instant.zero()
+            self._clamp_state()
             if eff.persistent:
                 self._effects.append(eff)
             else:
                 eff.on_expire(self._bio, self.cfg, self._tick)
 
     def cancel(self, name: str) -> None:
-        """自主动手：只允许 volitional 的常驻效果。"""
-        with self._lock:
-            for eff in self._effects:
-                if eff.name == name and eff.control is ControlKind.VOLITIONAL:
-                    eff.on_expire(self._bio, self.cfg, self._tick)
-                    self._effects.remove(eff)
-                    return
-            raise ValueError(f"no volitional effect named {name!r}")
+        """自主动手：停掉某个 volitional 效果；本来没在跑就什么都不做。"""
+        self._detach(name, ControlKind.VOLITIONAL)
 
     def interrupt(self, name: str, by: WakeSource = WakeSource.EXTERNAL) -> None:
-        """外界打断：只允许 interruptible 的效果（如睡眠）。"""
+        """外界打断：停掉某个 interruptible 效果；本来没在跑就什么都不做。"""
+        self._detach(name, None, interruptible=True)
+
+    def _detach(self, name: str, control, interruptible: bool = False) -> None:
+        if not any(cls.name == name for cls in _EFFECTS.values()):
+            raise ValueError(f"unknown effect: {name!r}")
         with self._lock:
             for eff in self._effects:
-                if eff.name == name and eff.interruptible:
+                if eff.name != name:
+                    continue
+                allowed = eff.interruptible if interruptible else eff.control is control
+                if allowed:
                     eff.on_expire(self._bio, self.cfg, self._tick)
                     self._effects.remove(eff)
                     return
-            raise ValueError(f"no interruptible effect named {name!r}")
 
     # ---------- 时间推进 ----------
     def advance(self, hours: float) -> None:
@@ -202,7 +228,10 @@ class BioSimEngine:
 
     def _clamp_state(self) -> None:
         s = self._bio.current_state
-        s.energy = min(self.cfg.energy_max, max(self.cfg.energy_min, s.energy))
-        s.fullness = min(self.cfg.fullness_max, max(self.cfg.fullness_min, s.fullness))
-        s.mood = min(self.cfg.mood_max, max(self.cfg.mood_min, s.mood))
+        for name, low, high in self._bounds:
+            value = getattr(s, name)
+            if value < low:
+                setattr(s, name, low)
+            elif value > high:
+                setattr(s, name, high)
 

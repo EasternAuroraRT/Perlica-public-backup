@@ -1,0 +1,20 @@
+# QBotPerlica 的 systemd 服务模板.
+# 复制到 /etc/systemd/system/qbot.service 后, 把下面 <...> 的占位换成自己的值:
+#   <运行用户>     专用低权限用户, 比如 perlica
+#   <项目绝对路径>  本项目所在的绝对路径, 比如 /home/perlica/QBotPerlica
+[Unit]
+Description=QBotPerlica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<运行用户>
+WorkingDirectory=<项目绝对路径>/Script
+ExecStart=<项目绝对路径>/npsdk/bin/python main.py
+# main.py 内部已有异常自重启循环, 这里只在真的退出时拉起
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

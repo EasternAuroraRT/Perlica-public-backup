@@ -1,4 +1,5 @@
-from .types import SleepState, ActivityLevel, HungerState, MoodState
+from .types import SleepState, ActivityLevel, GlycemiaState, HungerState, MoodState
+from .types import BioState, StateVec, Dimension
 
 from .enums import ControlKind, WakeSource
 from .config import BioSimConfig, default_config
@@ -8,18 +9,20 @@ from .actions import (
     EatParams, ExerciseParams, SleepParams, WakeParams,
     DigestEffect, ExerciseEffect, SleepEffect, WakeEffect,
 )
-from .physiology import EnergyDynamics, FullnessDynamics, StressDynamics, MoodDynamics
+from .physiology import EnergyDynamics, GlucoseDynamics, FullnessDynamics, StressDynamics, MoodDynamics
+from .observation import Observation
 from .engine import BioSimEngine
-from .render import BioSimRenderer
 
 __all__ = [
     "ControlKind", "WakeSource",
-    "SleepState", "ActivityLevel", "HungerState", "MoodState",
+    "SleepState", "ActivityLevel", "HungerState", "MoodState", "GlycemiaState",
+    "BioState", "StateVec", "Dimension",
     "BioSimConfig", "default_config",
     "Tick", "Influence", "Effect", "effect",
     "EatParams", "ExerciseParams", "SleepParams", "WakeParams",
-    "EnergyDynamics", "FullnessDynamics", "StressDynamics", "MoodDynamics",
+    "EnergyDynamics", "GlucoseDynamics", "FullnessDynamics", "StressDynamics", "MoodDynamics",
     "DigestEffect", "ExerciseEffect", "SleepEffect", "WakeEffect",
-    "BioSimEngine", "BioSimRenderer",
+    "Observation",
+    "BioSimEngine",
 ]
 

@@ -1005,14 +1005,10 @@
       "type": "function",
       "function": {
         "name": "send_file",
-        "description": "发送私聊文件.",
+        "description": "在当前聊天窗口发送文件.",
         "parameters": {
           "type": "object",
           "properties": {
-            "user_id": {
-              "type": "string",
-              "description": "发送对象的id"
-            },
             "file_path": {
               "type": "string",
               "description": "文件本地路径(建议使用绝对路径)"
@@ -1023,7 +1019,6 @@
             }
           },
           "required": [
-            "user_id",
             "file_path"
           ],
           "additionalProperties": false
@@ -1058,7 +1053,94 @@
       "type": "function",
       "function": {
         "name": "goto_sleep",
-        "description": "关闭终端并进入睡眠状态。可被闹钟叫醒或其他紧急事件叫醒。",
+        "description": "去睡觉。睡着后精力会自行恢复，可被闹钟或其他紧急事件叫醒。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_self_bio_state",
+        "description": "查看自己当前的身体状态：睡眠/活动/饥饿/情绪，以及能量/饱腹/心情/压力。想知道自己现在什么状态、能不能做某事时调用。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "wake_up",
+        "description": "主动醒来（起床）。仅在睡着时可用。",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "eat",
+        "description": "吃点东西。饱腹是立刻的，血糖和能量随消化慢慢上来；吃得多消化得久。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "food": {
+              "type": "string",
+              "description": "吃了什么，例如「小蛋糕」「一碗面」。"
+            },
+            "amount": {
+              "type": "number",
+              "description": "份数，默认 1。例如两个小蛋糕就填 2。"
+            }
+          },
+          "required": [
+            "food"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "exercise",
+        "description": "运动。会在给定时间内持续消耗体力，并让身体进入活跃状态。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "description": "做了什么运动，例如「散步」「跑步」「俯卧撑」。"
+            },
+            "minutes": {
+              "type": "number",
+              "description": "做了多久（分钟），默认 20。"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "stop_exercise",
+        "description": "中途停止运动。",
         "parameters": {
           "type": "object",
           "properties": {},

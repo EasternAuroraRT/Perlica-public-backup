@@ -1,6 +1,7 @@
 {
   "using_model": "deepseek",
   "using_multimodal": "glm_multi",
+  "using_compress_model": "deepseek",
   "model_config": {
     "deepseek": {
       "model_name": "deepseek-v4-pro",
@@ -41,5 +42,9 @@
   "weather_project_id": ";)",
   "weather_credential_id": ";)",
   "message_compress_lenth_threshold": 20,
-  "message_debug_max_length": 1000
+  "message_debug_max_length": 1000,
+  "manager_id": 123456789,
+  "enable_rag": false,
+  "datadir_real": "/path/to/NapCat-Datadir",
+  "datadir_napcat": "/app/.config/QQ/NapCat-Datadir"
 }

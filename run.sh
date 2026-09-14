@@ -27,7 +27,11 @@ while true; do
     "$ROOT/npsdk/bin/python" main.py || code=$?
     if [ "$code" -eq 0 ]; then
         break
+    elif [ "$code" -eq 2 ]; then
+        echo "poke restart."
+        continue
+    else
+        echo "main.py exited with code $code, restarting in 1s..."
     fi
-    echo "main.py exited with code $code, restarting in 1s..."
     sleep 1
 done

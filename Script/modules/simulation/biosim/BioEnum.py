@@ -1,11 +1,10 @@
-"""inner.bio_enums — 生物状态相关的枚举（供 BioState 键入与客户端复用）。"""
+"""生物状态的枚举（供 BioState 键入与消费方复用）。"""
 
 from enum import Enum
 
 
 class SleepState(Enum):
     AWAKE = "awake"
-    DOZING = "dozing"
     LIGHT = "light_sleep"
     DEEP = "deep_sleep"
     REM = "rem"

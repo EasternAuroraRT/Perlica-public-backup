@@ -6,9 +6,26 @@ import keyword
 
 
 class Dimension:
-    def __init__(self, name: str, default_value: float = 0) -> None:
+    """一个连续维度：名字、取值范围、初值、读数档位。
+
+    这些都是这个维度自己的性质，所以紧挨着维度定义写 —— 不散在别处的配置袋里，
+    引擎也不需要用 "<名>_max" 这种命名约定去猜。
+    """
+
+    def __init__(self, name: str, *, low: float = 0.0, high: float = 100.0,
+                 initial: float = 0.0, bands: tuple[float, ...] = ()) -> None:
         self.name: str = name
-        self.default_value: float = default_value
+        self.low: float = low
+        self.high: float = high
+        self.initial: float = initial
+        self.bands: tuple[float, ...] = bands
+
+    def clamp(self, value: float) -> float:
+        return min(self.high, max(self.low, value))
+
+    def band_of(self, value: float) -> int:
+        """落在第几档（0 起）：bands 是各档的升序分界点。"""
+        return sum(1 for edge in self.bands if value >= edge)
 
 
 class VectorMeta(type):
@@ -57,7 +74,7 @@ class VectorMeta(type):
             namespace["__slots__"] = tuple(slots)
             if "__init__" not in namespace:
                 body = "".join(
-                    f"    self.{element.name} = {element.default_value!r}\n"
+                    f"    self.{element.name} = {element.initial!r}\n"
                     for element in elements
                 )
                 init_namespace: dict[str, Any] = {}
@@ -85,12 +102,26 @@ class Vector(metaclass=VectorMeta):
                 "Vector is abstract: subclass it and declare a non-empty elements list"
             )
         for element in elements:
-            setattr(self, element.name, element.default_value)
+            setattr(self, element.name, element.initial)
 
     # ---------- 内存 / 原地工具（热路径复用缓冲，不 new 新向量） ----------
     def zero(self) -> "Vector":
+        return self.fill(0.0)
+
+    def fill(self, value: float) -> Self:
         for name in self._element_names:
-            setattr(self, name, 0.0)
+            setattr(self, name, value)
+        return self
+
+    def multiply_by_shifted(self, other: "Vector") -> "Vector":
+        """self[d] *= (1 + other[d])：把别处提交的倍率增量并进乘区积。
+
+        提交 0 就是无影响，-0.3 就是降低 30% —— 倍率本身由这里算出来，
+        效果只需要交"增减多少"，不必自己去凑 1+x。
+        """
+        other = self._require_compatible(other, "*=")
+        for name in self._element_names:
+            setattr(self, name, getattr(self, name) * (1.0 + getattr(other, name)))
         return self
 
     def _copy_from(self, other: "Vector") -> "Vector":

@@ -19,6 +19,7 @@ from modules.core.logger import log
 import modules.core.env as env # global status and variant
 from modules.core.chatwindow import ChatWindow, chat_type_str_cn, chat_type_str
 from .impl import bio_text
+from modules.simulation import biosim
 
 # region Reflection
 T = TypeVar("T")
@@ -156,7 +157,8 @@ def switch_chat_window(args: dict) -> list[ChatCompletionContentPartParam]:
         case _:
             return [{'type': 'text', 'text': f"Unable to parse type `{type_str}`."}]
     if target_id in env.chatwindows[chat_type]:
-        env.active_chatwindow = env.chatwindows[chat_type].get(target_id)
+        env.active_chatwindow = env.chatwindows[chat_type].get(target_id, env.active_chatwindow)
+        log.info(f"[tool info] current in chat {env.active_chatwindow.name}")
     else:
         return [{'type': 'text', 'text': f"Target chat is not found with id `{target_id}`."}]
     return [{'type': 'text', 'text': "\n".join([f"History:\n{chat_history}", f"Chatbox:\n{str(env.active_chatwindow)}"])}]
@@ -602,12 +604,15 @@ def get_self_bio_state(_: dict) -> list[ChatCompletionContentPartParam]:
     return [{"type": "text", "text": bio_text.state_text(env.biosim_engine)}]
 
 def goto_sleep(_: dict) -> list[ChatCompletionContentPartParam]:
-    env.biosim_engine.act_by_name("sleep")
-    return [{"type": "text", "text": "已躺下，正在入睡。请调用 end_action 结束本轮——睡着后你会一直睡到闹钟响起或被紧急事件叫醒。"}]
+    effect = biosim.SleepEffect()
+    reason = effect.refusal(env.biosim_engine.get_slice())
+    if reason:
+        return [{"type": "text", "text": reason}]
+    env.biosim_engine.add_effect(effect)
+    return [{"type": "text", "text": "已躺下，正在入睡。请调用 end_action 结束本轮——睡够了自己会醒，闹钟或紧急事件也会把你叫醒。"}]
 
 def wake_up(_: dict) -> list[ChatCompletionContentPartParam]:
-    from modules.simulation import biosim
-    env.biosim_engine.interrupt("sleep", by=biosim.WakeSource.SELF)
+    env.biosim_engine.add_effect(biosim.WakeEffect())
     return [{"type": "text", "text": "已醒来。"}]
 
 def eat(args: dict) -> list[ChatCompletionContentPartParam]:
@@ -616,7 +621,11 @@ def eat(args: dict) -> list[ChatCompletionContentPartParam]:
     if not name.strip():
         return [{"type": "text", "text": "没说要吃什么。"}]
     portion, quality = food.judge(name, get_typed_arg(args, "amount", (int, float), 1.0))
-    env.biosim_engine.act_by_name("eat", portion=portion, quality=quality)
+    effect = biosim.EatEffect(portion=portion, quality=quality)
+    reason = effect.refusal(env.biosim_engine.get_slice())
+    if reason:
+        return [{"type": "text", "text": reason}]
+    env.biosim_engine.add_effect(effect)
     return [{"type": "text", "text": f"正在吃`{name}`"}]
 
 def exercise(args: dict) -> list[ChatCompletionContentPartParam]:
@@ -625,11 +634,18 @@ def exercise(args: dict) -> list[ChatCompletionContentPartParam]:
     if not kind.strip():
         return [{"type": "text", "text": "没说要做什么运动。"}]
     intensity, minutes = exertion.judge(kind, get_typed_arg(args, "minutes", (int, float), 20.0))
-    env.biosim_engine.act_by_name("exercise", intensity=intensity, minutes=minutes)
+    effect = biosim.ExerciseEffect(intensity=intensity, minutes=minutes)
+    reason = effect.refusal(env.biosim_engine.get_slice())
+    if reason:
+        return [{"type": "text", "text": reason}]
+    env.biosim_engine.add_effect(effect)
     return [{"type": "text", "text": f"开始{kind}。"}]
 
 def stop_exercise(_: dict) -> list[ChatCompletionContentPartParam]:
-    env.biosim_engine.cancel("exercise")
+    for effect in env.biosim_engine.effects:
+        if isinstance(effect, biosim.ExerciseEffect):
+            env.biosim_engine.remove_effect(effect)
+            break
     return [{"type": "text", "text": "已停止运动。"}]
 
 # -------------

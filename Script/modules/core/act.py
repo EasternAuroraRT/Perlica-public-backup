@@ -28,7 +28,7 @@ def act(last_prompt: str | list[ChatCompletionContentPartParam], high_priority: 
     if high_priority:
         log.debug("Currently high priority task.")
     log.info("Trying to add a new chat thread...")
-    threading.Thread(target=_chat_thread_func, args=(chat_data1, last_prompt, high_priority,)).start()
+    threading.Thread(target=_chat_thread_func, args=(chat_data1, last_prompt, high_priority,), daemon=True).start()
 
 
 def _acquire_worker(chat_thread_data: ChatThreadData) -> int:
@@ -104,7 +104,7 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
                     break
                 except Exception as e:
                     sleeptime = 1
-                    log.error(f"{e} occured when creating api connection. Retrying in {sleeptime} second(s)...")
+                    log.error(f"[{__file__}] {e} occured when creating api connection. Retrying in {sleeptime} second(s)...")
                     time.sleep(sleeptime)
             # Dealing result
             for chunk in stream:

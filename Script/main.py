@@ -5,6 +5,7 @@ import asyncio
 import time
 from datetime import datetime
 import os, sys
+import traceback
 
 import napcat as np
 from config import config
@@ -22,7 +23,7 @@ async def main() -> None:
     biosim_engine = env.biosim_engine
     async for event in npclient:
         bio_state_description: ChatCompletionContentPartParam
-        bio_state = biosim_engine.observe()
+        bio_state = biosim_engine.get_slice()
         bio_state_description = {'type': "text", "text": f"Current state: \n{bio_text.state_text(biosim_engine)}\n"}
         should_reply: bool = False
         should_queue: bool = False
@@ -36,9 +37,15 @@ async def main() -> None:
             case events.EventUrgency.Normal:
                 should_reply = active_mode and not no_disturb_mode
                 should_queue = True
+            case events.EventUrgency.NormalNoQueue:
+                should_reply = active_mode and not no_disturb_mode
+                should_queue = False
             case events.EventUrgency.Important:
                 should_reply = active_mode
                 should_queue = True
+            case events.EventUrgency.ImportantNoQueue:
+                should_reply = active_mode
+                should_queue = False
             case events.EventUrgency.Urgent:
                 should_reply = True
                 should_queue = False
@@ -47,7 +54,7 @@ async def main() -> None:
             final_msg: list[ChatCompletionContentPartParam] = []
             final_msg.append(bio_state_description)
             if bio_state.sleep is not biosim.SleepState.AWAKE:
-                biosim_engine.interrupt("sleep", by=biosim.WakeSource.EXTERNAL)
+                biosim_engine.add_effect(biosim.WakeEffect())
                 final_msg.append({'type': "text", "text": f"You are waken up forcely by following event.\n"})
             final_msg.extend(env.take_pending() + api_call_msg)
             act.act(final_msg)
@@ -61,28 +68,22 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    import signal
-
-    def _graceful_exit(signum, _frame) -> None:
-        # 主动结束 (Ctrl+C / SIGTERM): 退出码 0, 外面的 supervisor 不要重启
-        log.info(f"Received signal {signum}. Bye.")
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, _graceful_exit)
-    signal.signal(signal.SIGTERM, _graceful_exit)
-
+    __restart_times = 0
+    __max_restart_times = 10
     log.debug("Currently in debug mode. Poke to reload.")
     while True:
         try:
             asyncio.run(main())
         except UserRestart:
             log.warning("Restarting...")
-            try:
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            except OSError as e:
-                # 进程内已经加载不到新代码了, 只能非 0 退出, 让 supervisor 重新拉一个进程
-                log.error(f"[main] execv failed: {e}. Exiting for the supervisor to restart.")
-                sys.exit(1)
+            sys.exit(2)
+        except KeyboardInterrupt:
+            log.warning("Exit...")
+            sys.exit(0)
         except Exception as e:
-            log.error(f"[main] {e}")
+            log.error(f"[{__file__}] {e}\n{traceback.format_exc()}")
+            if __restart_times > __max_restart_times:
+                log.fatal(f"[{__file__}] Retrying for over {__max_restart_times} times; Restarting...\n")
+                sys.exit(1)
+            __restart_times += 1
             time.sleep(1)

@@ -52,7 +52,7 @@ def _now_hour() -> float:
     return now.hour + now.minute / 60.0
 
 
-biosim_engine: bio.BioSimEngine = bio.BioSimEngine(start_hour=_now_hour())
+biosim_engine, biosim_clock = bio.standard_with_clock(start_hour=_now_hour())
 
 async def init():
     async with npclient:
@@ -108,7 +108,8 @@ async def init():
         role_prompt += "\nCurrently not in any chat window.\n"
         sysprompt.append({"role": "system", "content": role_prompt})
         if biosim_engine is not None:
-            biosim_engine.start()
+            biosim_clock.start()
+            log.info(f"[env] Starting BioSim:\n{biosim_engine.get_slice()}")
 
 def reload():
     chatwindows.clear()
@@ -122,4 +123,4 @@ def get_status_prompt() -> str:
 '''
 
 def is_active_time() -> bool:
-    return biosim_engine.observe().sleep is bio.SleepState.AWAKE
+    return biosim_engine.get_slice().sleep is bio.SleepState.AWAKE

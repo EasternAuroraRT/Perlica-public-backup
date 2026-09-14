@@ -1,255 +1,211 @@
 # biosim 效果插件说明书
 
-一句话：**效果只声明，引擎改状态。**
+一句话：**引擎是计算器，效果只声明；参数在效果自己身上。**
+
+## 0. 结构
+
+```
+modules/simulation/biosim/
+  __init__.py          包出口：所有公开名字
+  __main__.py          可运行示例
+  BioEngine.py         计算器：挂效果、推进时间、交读数
+  Effect.py            效果契约（Effect 基类）
+  EngineClock.py       时钟：按真实时间驱动计算器
+  EngineSlice.py       读模型：程序侧的类型化快照
+  BioEnum.py           状态枚举
+  templates.py         现成的装配模板（= 调参面）
+  BasicEffects/        效果插件
+    physiology.py        常态生理 + 连续量到枚举的映射
+    physics.py           躯体行为：吃 / 运动 / 睡 / 醒
+  types/               值类型
+    BioState.py          状态容器 + 维度声明 + 方面表
+    Influence.py         效果的声明
+    Tick.py              时间上下文
+    Vector.py            向量与维度
+```
+
+命名规矩：`Bio*` 是模拟的主体（`BioEngine` / `BioState` / `BioEnum`），
+`Engine*` 是引擎周边的设施（`EngineClock` / `EngineSlice`），`Effect.py` 是契约，
+效果插件住在 `BasicEffects/`，纯值类型住在 `types/`。
+
+## 1. 三个角色
 
 | 角色 | 职责 |
 | --- | --- |
-| 效果 `Effect` | 声明"这一帧想让状态怎么变"，自己不碰状态 |
-| 引擎 `BioSimEngine` | 唯一有权改状态的地方：汇总、门控、积分、钳制、回收 |
-| 读数 `Observation` | 引擎交出的类型化结果，也是黑箱化的边界 |
+| `BioEngine` | 计算器：挂效果、推进时间、交读数。**不认识业务、不认识动作、不认识配置** |
+| `Effect` | 参数在构造时给；每次被问到时只拿到 `(state, tick)`，声明这一帧的贡献 |
+| `EngineSlice` | 类型化读模型，也是黑箱化的边界 |
 
-消费方（程序 / 模型 / 文本渲染）只跟 `Observation` 和动作名打交道，不需要认识任何效果。
+时钟（谁按真实时间驱动计算器）在 `EngineClock` 里：引擎只认 `dt`。
 
----
-
-## 1. 一个效果 = 四件东西
+## 2. 挂一个效果
 
 ```python
-from dataclasses import dataclass
-from .config import BioSimConfig
-from .types import BioState, Influence, Tick
-from .enums import ControlKind
-from .core import Effect, effect
+engine = standard(start_hour=8.0)          # 模板：常态已挂好，拿来就用
 
+engine.add_effect(EatEffect(portion=0.7, quality=0.5))   # 挂上就落地
+engine.add_effects(SleepEffect(), CoffeeEffect())        # 一次挂多个
+engine.remove_effect(effect)               # 摘掉（收尾照走），不在列表里返回 False
 
-@dataclass(frozen=True)
-class CoffeeParams:          # (1) 类型化命令参数：构造即静态合法，不做运行时校验
-    shots: float = 1.0
-
-
-@effect(CoffeeParams)        # (2) 注册：参数类型 -> 效果类
-class CoffeeEffect(Effect):
-    name = "coffee"                  # (3) 对外身份 + 行为声明
-    control = ControlKind.VOLITIONAL
-    interruptible = False
-    persistent = True
-
-    # (4) 生命周期：门控 -> 落地 -> 每帧声明 -> 回收 -> 收尾
-    @classmethod
-    def refusal(cls, state: BioState, cfg: BioSimConfig) -> str | None: ...
-    def __init__(self, cfg: BioSimConfig, params: CoffeeParams) -> None: ...
-    def _compute_influence(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> Influence: ...
-    def alive(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> bool: ...
-    def on_expire(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> None: ...
+engine.effects                             # 只读快照
+engine.advance(2.0)                        # 推进（内部按 time_step 分步）
+engine.observe()                           # 读数（EngineSlice）
 ```
 
-注册表的 key 是**参数类型**，不是名字：
+没有动作名、没有注册表、没有参数类型表 —— **要做什么就构造一个效果对象挂上去**。
+"动作"就是"一个会自己过期的效果"。
 
-| 你怎么下达 | 引擎怎么找到效果 |
+## 3. 参数在哪：没有 config 这个东西
+
+| 什么参数 | 归谁 |
 | --- | --- |
-| `engine.act(CoffeeParams(shots=2))` | 按 `type(params)` 查注册表 |
-| `engine.act_by_name("coffee", shots=2)` | 按效果类的 `name` 找到类，再构造 `CoffeeParams` |
+| 效果自己的数字（消化多久、恢复多快、乘区多少…） | **效果的构造参数** |
+| 维度的范围 / 初值 / 读数档位 | **`types/BioState.py` 里的 `Dimension` 声明** |
+| 积分步长 | `BioEngine(time_step=...)` |
+| 随机源 | 注入到要随机的那个效果（`templates.sleep_effect(seed=...)`） |
+| 整套平衡 / 多套预设 | **模板函数**：`templates.standard` 的函数体就是调参面 |
 
-`engine.py` 里那行 `from . import actions` 就是为了触发注册。效果**写在哪都行，但必须被 import 过一次**，否则注册表里没有它。
+理由是同一个：**参数紧挨着它配置的东西**。一袋全局配置会把效果的真实依赖藏起来
+（看签名看不出 `EnergyDynamics` 需要什么），也让"两套不同参数的模拟"变得别扭。
 
----
+```python
+engine.add_effect(EnergyDynamics(base_cost=6.0))        # 这个世界的代谢更费
+engine.add_effect(FullnessDynamics(decay_per_hour=5.0)) # 而且饿得慢
+```
 
-## 2. 类属性
-
-| 属性 | 类型 | 默认 | 作用 |
-| --- | --- | --- | --- |
-| `name` | `str` | `"effect"` | 对外动作名。`act_by_name` / `cancel` / `interrupt` / `available_actions` 全靠它 |
-| `control` | `ControlKind` | `AUTONOMIC` | `VOLITIONAL` = 外在动作，自己开的自己能 `cancel`；`AUTONOMIC` = 内在进程，触发后自行运转，`cancel` 不动它 |
-| `interruptible` | `bool` | `False` | 外界（闹钟、突发事件）能否用 `interrupt` 停掉它 |
-| `persistent` | `bool` | `True` | `True` 进常驻列表；`False` = 一次性，落地后立刻 `on_expire`，永不进列表 |
-
----
-
-## 3. 方法
+## 4. 效果契约（Effect.py）
 
 | 方法 | 调用时机 | 契约 |
 | --- | --- | --- |
-| `refusal(cls, state, cfg)` | 类方法。`act()` 之前一次；`available_actions()` 每次遍历时 | 允许返回 `None`；不允许返回**原因字符串**，会作为异常抛给程序、也转述给模型。**门控只有这一处** |
-| `__init__(cfg, params)` | 下达动作时一次 | 预先把率、时长、阈值算好存成本地属性；要瞬时跳变就填 `self._inf.instant`。`self._inf = Influence()` 在这里建一次 |
-| `_compute_influence(state, cfg, tick)` | **每帧**，锁内，热路径 | 返回那个复用的 `Influence`，只声明，不改状态 |
-| `alive(state, cfg, tick)` | 每帧末尾 | 返回 `False` 则本帧被回收 |
-| `on_expire(state, cfg, tick)` | 回收时（自然结束、`cancel`、`interrupt` 都会走） | 收尾。**唯一允许直接写状态的地方**，且只能 `state.set_aspect(...)` |
+| `influence(state, tick) -> Influence` | 每帧 + 落地那一次 | **唯一必须实现的**。只声明，不改状态 |
+| `alive(state, tick) -> bool` | 每帧末 | `False` 则本帧被摘掉（并走 `on_expire`） |
+| `on_expire(state, tick)` | 被摘掉时（自然到期、`remove_effect`） | 收尾。**唯一允许直接写状态的地方** |
+| `refusal(slice) -> str \| None` | `add_effect` 之前 | 挂上去有没有意义；没意义就把原因说出来 |
 
-参数类型由各子类在自己的 `__init__` 里声明（基类的 `params` 是 `Any`）。**别在热路径反复读 `self.params`** —— 该在 `__init__` 里摊开成算好的量。
+注意签名里**没有 `cfg`**：效果的外部依赖只有它自己的构造参数。
+`refusal` 收的是 `EngineSlice`（外面看得见的读数），所以任何消费方都能问。
 
----
+## 5. 四个通道
 
-## 4. Influence 三个通道
-
-| 通道 | 语义 | 何时被应用 |
+| 通道 | 语义 | 引擎怎么整合 |
 | --- | --- | --- |
-| `delta` | **速率**，单位是"每模拟小时" | 每帧累加进 net，帧末一次性 `current_state += net * dt` |
-| `instant` | **瞬时矢量跳变** | 只在动作下达那一刻应用一次，引擎应用后立刻清零 |
-| `aspects` | 离散枚举与连续标量（`sleep`、`stress`、各计时器、时钟…） | 每帧写入，同名后写覆盖先写 |
-
-```python
-def _compute_influence(self, state, cfg, tick):
-    self._inf.delta.glucose = self._glucose_rate             # 每小时的量
-    self._inf.aspects["activity"] = ActivityLevel.ACTIVE     # 直接写成这个值
-    self.remaining -= tick.dt
-    return self._inf
-```
-
-热路径零分配的写法就是：`self._inf` 建一次、原地改字段、原样返回。
-
----
-
-## 5. Tick 的四个字段
-
-| 字段 | 含义 |
-| --- | --- |
-| `dt` | 本帧步长，单位小时（等于 `config.time_step`） |
-| `sim_now` | 当前模拟时刻 |
-| `elapsed` | 引擎启动以来累计的小时数 |
-| `scale` | 当前时间倍率 |
-
----
-
-## 6. 引擎时序
-
-**下达动作 `act()`：**
+| `delta` | **基础值**：每模拟小时的变化率 | 各效果**相加** |
+| `mul` | **乘区**：提交的是**倍率增量**，单位元 **0.0**（0 = 无影响，-0.3 = 降低 30%） | 每个效果算 `(1 + 提交值)`，各效果**相乘** |
+| `instant` | **瞬时跳变** | 只在效果落地那一刻应用一次，随后清零，不吃乘区 |
+| `aspects` | **方面声明**：`AspectPatch`（字段可空，静态可查） | 每帧合并进状态的 `Aspects`（齐全，少一个字段就报错） |
 
 ```plaintext
-1. 查注册表：参数类型 -> 效果类
-2. 门控：cls.refusal(state, cfg) 返回原因就 raise，什么都不发生
-3. tick 归零（dt=0）：下达那一刻不消耗时间
-4. 构造效果，并调用一次 influence()
-5. 写 aspects
-6. 把 instant 加到 current_state，随即清零，并钳制
-7. persistent -> 进常驻列表；否则立刻 on_expire（一次性动作）
+实际修改量 = ( 基础值之和 ) x Π( 1 + 各效果提交的倍率 ) x dt
 ```
 
-**每帧 `_update(dt)`：**
+**基础值**用来"添一笔"（睡眠在回电就交 +9/h），**乘区**用来"按比例改基准"
+（睡眠让血糖消耗降 60% 就交 -0.6）。两个各交 -0.3 的效果得到 `0.7 x 0.7 = 0.49`
+—— **每个效果是一个独立乘区**，效果不需要知道还有谁在改同一个维度。
+
+方面分两张表同理：状态里那份必须齐全（`Aspects`，字段无默认值，少给就报错），
+效果提交的是部分声明（`AspectPatch`，字段可空）。**不要用 `.get()` 之类平息报错** ——
+报错意味着类型没说清，改类型，别绕过检查。
+
+## 6. 引擎时序（BioEngine.py）
+
+**`add_effect(effect)`：**
 
 ```plaintext
-1. tick.set(dt, clock_hour, elapsed, scale)
-2. net 清零
-3. 逐个 effect.influence()：net += delta；aspects 就地写入（后写覆盖先写）
-4. current_state += net * dt        <- 连续维度在这里一次性积分
-5. 钳制到各维度的 [min, max]
+1. 问 effect.refusal(observe())：有原因就不挂，返回 False
+2. tick 归零（dt=0）：落地不消耗时间
+3. 问一次 influence()：合并 aspects、加 instant、钳制
+4. 进效果列表
+5. 回收一遍（一次性效果在这里就到期了，例如 WakeEffect）
+```
+
+**`advance(hours)` → 内部分步 `_step(dt)`：**
+
+```plaintext
+1. tick.set(dt, clock_hour, elapsed_hours)
+2. net 清零；mul 填单位元 1.0
+3. 逐个 effect.influence()：net += 基础值；mul 并进 (1 + 提交倍率)；aspects 合并
+4. net = 基础值之和 x 乘区倍率，再 current_state += net * dt
+5. 按各维度的 [low, high] 钳制
 6. clock_hour / elapsed_hours 前进
-7. 逐个 alive()：False 的走 on_expire，然后从列表里移除
+7. 逐个 alive()：False 的走 on_expire，然后从列表移除
 ```
 
-三点推论：
-
-- 效果之间**没有先后依赖**，因为连续维度是最后统一积分的；只有 `aspects` 会互相覆盖，那才需要注意注册顺序。
-- 本帧写入的 aspect 会立刻被同帧的其他效果读到。
-- 回收发生在积分之后，所以"最后一帧"的影响照样生效。
-
----
-
-## 7. 完整示例（已跑通，也过了 pyright）
+## 7. 一个完整的效果
 
 ```python
-from dataclasses import dataclass
-
-from .config import BioSimConfig
-from .types import BioState, Influence, Tick
-from .types import SleepState
-from .enums import ControlKind
-from .core import Effect, effect
-
-
-@dataclass(frozen=True)
-class CoffeeParams:
-    shots: float = 1.0
-
-
-@effect(CoffeeParams)
 class CoffeeEffect(Effect):
-    name = "coffee"
-    control = ControlKind.VOLITIONAL     # 自己能开，也能自己 cancel
-    interruptible = False                # 外界打断不了
-    persistent = True                    # 常驻，直到 alive() 说不要了
+    """喝咖啡：当场入血（瞬时），之后一段时间提神降压力。"""
 
-    @classmethod
-    def refusal(cls, state: BioState, cfg: BioSimConfig) -> str | None:
-        if state.sleep is not SleepState.AWAKE:
-            return "你已经睡了，喝了也提不了神。"
-        return None
+    def __init__(self, *, shots: float = 1.0, minutes: float = 30.0,
+                 energy_rate: float = 12.0, stress_rate: float = 20.0) -> None:
+        self.energy_rate = energy_rate            # 参数全在构造时给
+        self.stress_rate = stress_rate
+        self._left = minutes / 60.0
+        self._inf = Influence()                   # 热路径复用，不在帧里 new
+        self._inf.instant.glucose = 6.0 * shots   # 落地那一刻入血
 
-    def __init__(self, cfg: BioSimConfig, params: CoffeeParams) -> None:
-        super().__init__(cfg, params)
-        self._shots = params.shots               # 参数在这里摊开成算好的量
-        self.remaining = 0.5 * self._shots
-        self._energy_rate = 12.0 * self._shots
-        self._stress_rate = 20.0
-        self._inf = Influence()                  # 热路径复用，不在帧里 new
-        self._inf.instant.glucose = 6.0 * self._shots   # 落地下肚：立刻入血
+    def refusal(self, slice: EngineSlice) -> str | None:
+        if slice.sleep is SleepState.AWAKE:
+            return None
+        return "你已经睡了，喝了也提不了神。"
 
-    def _compute_influence(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> Influence:
-        self.remaining -= tick.dt
-        self._inf.delta.energy = self._energy_rate
-        self._inf.aspects["stress"] = max(0.0, state.stress - self._stress_rate * tick.dt)
+    def influence(self, state: BioState, tick: Tick) -> Influence:
+        self._left -= tick.dt
+        self._inf.delta.energy = self.energy_rate
+        self._inf.aspects.stress = max(0.0, state.aspects.stress - self.stress_rate * tick.dt)
         return self._inf
 
-    def alive(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> bool:
-        return self.remaining > 0
-
-    def on_expire(self, state: BioState, cfg: BioSimConfig, tick: Tick) -> None:
-        state.set_aspect("last_coffee_shots", self._shots)
+    def alive(self, state: BioState, tick: Tick) -> bool:
+        return self._left > 0
 ```
 
-实测输出：
-
-```plaintext
-注册后的动作表: [..., "coffee"]              <- 自动进 available_actions
-喝下 2 份: 血糖 55.0 -> 67.0 (instant) | 能量 80.0 -> 80.0 (此刻不动)
-0.5h 后:   能量 91.0 (delta 生效)
-1.1h 后:   效果已被 alive 回收, last_coffee_shots=2 (on_expire 已收尾)
-cancel 后: 效果立刻移除, on_expire 照样走
-```
-
----
+挂上：`engine.add_effect(CoffeeEffect(shots=2))`（放进 `BasicEffects/`，或你自己的模块）
 
 ## 8. 改东西 = 改哪里
 
 | 想改什么 | 改哪里 |
 | --- | --- |
-| 加/删一个连续维度（体温、水合…） | `types/BioState.py` 的 `StateVec.elements` 与 `__init__`；`config.py` 里补 `<名>_initial / _min / _max` 三行。**引擎、观测层、向量运算都不用动** |
-| 改某维度的上下限或初始值 | `config.py` |
-| 增删 / 整组替换常驻模拟项 | 构造时传 `base_effects=(...)`，或改 `BioSimEngine.BASE_EFFECTS` |
-| 加一个可下达的动作 | `actions.py`：Params + `@effect` + 效果类。要给模型用再去 `modules/tools/` 挂工具 |
-| 改数值平衡 | `config.py` 一张表，没有散落的魔数 |
-| 让**程序**读到新量 | `observation.py` 加字段 + `engine.observe()` 填上 |
+| 加/删一个连续维度 | `types/BioState.py` 的 `StateVec.elements`（范围、初值、档位一起写）+ `__init__` 加一行。**引擎、效果、向量运算都不用动** |
+| 加一个离散/标量方面 | `types/BioState.py`：`Aspects` 与 `AspectPatch` 各加一行（对不上会在 import 时抛错） |
+| 改某个效果的数值 | 那个效果的构造参数，或 `templates.py` 里传的值 |
+| 换一套整体平衡 | 改 `templates.standard`，或照着再写一个模板函数 |
+| 加一个可挂载的行为 | 在 `BasicEffects/physics.py`（或你自己的模块）写一个 `Effect` 子类，装配处 `add_effect()` |
+| 加一个常态生理 | 在 `BasicEffects/physiology.py` 写一个 `Effect` 子类，加进 `BASELINE` |
+| 让**程序**读到新量 | `EngineSlice.py` 加字段 + `BioEngine.observe()` 填上 |
 | 让**模型**看到 | `modules/tools/impl/bio_text.py` 加占位符（文本是工具，不进核心） |
-| 换掉整套读数的措辞 | 换掉 `bio_text` 就行，核心不认识它 |
 
-维度的约定是 `<名>_initial / <名>_min / <名>_max`，引擎按约定 `getattr` 取用。**少写一个会在构造时就报 AttributeError**，不会静默跑飞。
-
----
+维度的档位写在维度上：`Dimension("fullness", initial=100.0, bands=(25.0, 60.0))`
+就是"低于 25 算饿、到 60 算饱"。读数分档由 `band_of()` 查出来，不是 if 链；
+`hunger_of / mood_of / glycemia_of` 就在 `BasicEffects/physiology.py` 里查这张表。
 
 ## 9. 红线
 
-1. `_compute_influence` 里**不许改状态** —— 声明，不执行。唯一例外是 `on_expire`。
-2. **不许在热路径分配**：`self._inf` 建一次、复用；不 new 向量、不建临时 dict。
-3. **不许阻塞**：它在锁内每帧跑，卡住就是整个引擎卡住。
-4. `instant` 只在动作下达那一刻有效，引擎用完即清零，别指望它在后续帧还在。
-5. `on_expire` 只有 `set_aspect` 这一条出口，**改不了连续维度**。想留下连续量的尾巴，得在 `alive` 还没为假的时候用 `delta` 办。
-6. 效果之间**不要互相引用**，靠状态通信（`FullnessDynamics` 读血糖就是这么做的）。
-7. `set_aspect` 什么名字都收，写错了不会报错，只是没人读 —— 名字要和 `BioState` 的注解对上。
-8. `refusal` 要写就写成**同样签名的 classmethod**，不要 `refusal = classmethod(lambda ...)`：那是属性不是方法，静态检查对不上，参数也没有提示。
+1. `influence` 里**不许改状态** —— 声明，不执行。唯一例外是 `on_expire`。
+2. **不许在热路径分配**：`self._inf` 在 `__init__` 建一次、复用。
+3. **不许阻塞**：它在锁内每帧跑。
+4. `instant` 只在落地那一刻有效，引擎用完即清零。
+5. `on_expire` 只能写 aspects，**改不了连续维度**。
+6. 效果之间**不要互相引用**，靠状态通信。
+7. 效果要的外部依赖只有构造参数；**别去够全局配置**（没有这个东西了）。
+8. 乘区交的是**增减**（单位元 0.0），不要交倍率本身，也别拿它表达"添一笔"。
+9. **不要在效果里自己算最终值** —— 整合是引擎的事。
+10. 效果对象**有可变状态**（进度、随机源），一个对象只挂一次；要再来一次就新建一个。
+11. 方面按类型分两头：状态是 `Aspects`（齐全，直接读），声明是 `AspectPatch`（部分，直接写字段）。
+    **不许用 `.get()` 平息报错** —— 报错意味着类型没说清，改类型，别绕过检查。
 
----
+## 10. 内置效果与默认参数
 
-## 10. 内置效果
+| 住在哪 | 名字 | 构造参数（都有默认值） |
+| --- | --- | --- |
+| physiology | `EnergyDynamics` | `base_cost=2.0, low_glycemia_cost=4.0` |
+| physiology | `GlucoseDynamics` | `decay_per_hour=6.0` |
+| physiology | `FullnessDynamics` | `decay_per_hour=20.0` |
+| physiology | `StressDynamics` | `rise_rate=10.0, fall_rate=5.0, energy_low=40.0, hunger_factor=0.8` |
+| physiology | `MoodDynamics` | `response_rate=2.0, happy_stress=30.0, happy_energy=60.0, irritable_stress=70.0` |
+| physics | `EatEffect` | `portion=0.5, quality=1.0, digest_hours=1.0, fullness_gain=60.0, glucose_gain=70.0, energy_gain=8.0, mood_gain=12.0` |
+| physics | `ExerciseEffect` | `intensity=1.0, minutes=20.0, energy_rate=4.0, glucose_rate=12.0` |
+| physics | `SleepEffect` | `recovery_per_hour=9.0, wake_rate=1.5, wake_sharpness=30.0, cycle_hours=1.5, glucose_factor=-0.6, rng=...` |
+| physics | `WakeEffect` | — |
 
-| 名字 | 参数 | control | 说明 |
-| --- | --- | --- | --- |
-| `energy` | — | AUTONOMIC | 常驻。按睡眠相位回/耗，血糖过低时额外掉 |
-| `glucose` | — | AUTONOMIC | 常驻。持续消耗，睡眠时慢；低血糖时消耗减半 |
-| `fullness` | — | AUTONOMIC | 常驻。**下降速度由血糖浓度决定**（高档 x0.35 / 常档 x1.0 / 低档 x1.6） |
-| `stress` | — | AUTONOMIC | 常驻。能量低、饥饿、赖床时上升 |
-| `mood` | — | AUTONOMIC | 常驻。向目标值收敛，目标由压力与能量决定 |
-| `eat` | `EatParams(portion, quality)` | AUTONOMIC | **instant 充腹**，之后血糖/能量/心情随消化窗口上升 |
-| `exercise` | `ExerciseParams(intensity, minutes)` | VOLITIONAL | 持续耗能、耗血糖，切 ACTIVE |
-| `sleep` | `SleepParams()` | AUTONOMIC，可打断 | 驱动浅睡 / 深睡 / REM / 赖床的相位循环 |
-| `wake` | `WakeParams()` | VOLITIONAL，一次性 | 立刻回到清醒 |
-
-前五个就是 `BioSimEngine.BASE_EFFECTS`（常驻模拟项），后四个是可下达的动作。
+前五个组成 `BasicEffects.physiology.BASELINE`；`templates.standard` 按上表的数字把它们挂好。
+睡眠时长没有配置项：它是"回满精力要多久"的结果（净 +7/h），再叠上按概率掷出来的随机。

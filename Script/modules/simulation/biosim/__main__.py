@@ -1,24 +1,27 @@
-"""示例：推进 + 下命令。文本渲染不在这里——那是消费方自己的工具。"""
-from .config import default_config
-from .engine import BioSimEngine
-from .actions import EatParams, ExerciseParams, SleepParams, WakeParams
+"""示例：挂一组常态效果，推进时间，再挂行为效果看读数。"""
+from .BasicEffects.physics import EatEffect, ExerciseEffect, SleepEffect, WakeEffect
+from .templates import standard
 
 
 def main() -> None:
-    engine = BioSimEngine(default_config(), start_hour=8.0)
+    engine = standard(start_hour=8.0)
     engine.advance(4.0)
-    print("读数:", engine.observe())
-    print("可做:", engine.available_actions())
-    for params in (EatParams(portion=0.5), ExerciseParams(intensity=1.0, minutes=10), SleepParams()):
-        try:
-            engine.act(params)
-        except ValueError as exc:
-            print("被拒:", exc)
+    print("读数:", engine.get_slice())
+
+    for effect in (EatEffect(portion=0.5),
+                   ExerciseEffect(intensity=1.0, minutes=10),
+                   SleepEffect()):
+        reason = effect.refusal(engine.get_slice())
+        if reason is not None:
+            print("挂不上", type(effect).__name__, ":", reason)
             continue
+        engine.add_effect(effect)
         engine.advance(0.5)
-        print("->", engine.observe())
+        print(type(effect).__name__, "->", engine.get_slice())
+
+    engine.add_effect(WakeEffect())
+    print("醒来:", engine.get_slice().sleep)
 
 
 if __name__ == "__main__":
     main()
-

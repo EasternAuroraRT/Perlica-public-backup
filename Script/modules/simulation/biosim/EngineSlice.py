@@ -11,7 +11,7 @@ from .types import SleepState, ActivityLevel, GlycemiaState, HungerState, MoodSt
 
 
 @dataclass(frozen=True)
-class Observation:
+class EngineSlice:
     # 离散相位（枚举）
     sleep: SleepState
     activity: ActivityLevel
@@ -29,3 +29,10 @@ class Observation:
     elapsed_hours: float
     sleep_duration: float
     last_sleep_duration: float
+
+    def __str__(self) -> str:
+        result: str = ""
+        for attr in dir(self):
+            if not attr.startswith('__'):
+                result += f"{attr}: {getattr(self, attr)}\n"
+        return result

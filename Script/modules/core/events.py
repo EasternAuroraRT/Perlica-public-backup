@@ -17,7 +17,9 @@ from modules.core.logger import log, UserRestart, log_level
 class EventUrgency(Enum):
     Ignore = 0          # always ignore
     Normal = auto()     # ignored when no-disturbing mode is on
+    NormalNoQueue = auto()
     Important = auto()  # ignored when resting
+    ImportantNoQueue = auto()
     Urgent = auto()     # always notify
 
 async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[list[ChatCompletionContentPartParam], EventUrgency]:
@@ -38,7 +40,7 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
             log.info("Heartbeat RCVD")
             prompt = f"You are watching your terminal at {datetime.now().strftime("%m-%d-%H-%M")}. Do anything as you wish."
             api_call_msg.append({'type':'text', 'text': prompt})
-            event_urgency = EventUrgency.Important
+            event_urgency = EventUrgency.ImportantNoQueue
         case MessageEvent():
             if not event.message:
                 event_urgency = EventUrgency.Ignore

@@ -27,7 +27,7 @@ def on_alarm_triggered(alarm_id: str) -> None:
     try:
         import modules.core.env as env
         from modules.simulation import biosim
-        env.biosim_engine.interrupt("sleep", by=biosim.WakeSource.ALARM)
+        env.biosim_engine.add_effect(biosim.WakeEffect())
         pending = env.take_pending()  # 睡着期间积压的消息，一并交给它
     except Exception as e:
         log.error(f"[alarm->on_alarm_triggered->wake] {e}")

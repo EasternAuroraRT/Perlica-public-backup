@@ -3,7 +3,6 @@ import threading
 from openai import OpenAI
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 from concurrent.futures import ThreadPoolExecutor, Future
-from dataclasses import dataclass
 import time
 
 from config import config # customized configuration
@@ -12,7 +11,6 @@ import modules.core.env as env # global status and variant
 from modules.core.logger import log
 from modules.core.context_compress import get_compressed_context
 
-@dataclass
 class ChatThreadData:
     condition: threading.Condition = threading.Condition()
     stop_event: threading.Event = threading.Event()

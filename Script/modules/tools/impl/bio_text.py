@@ -20,8 +20,7 @@ from enum import Enum
 from typing import Iterable, Literal, Mapping
 
 from modules.simulation.biosim.BioEngine import BioEngine
-from modules.simulation.biosim.BioEnum import (ActivityLevel, GlycemiaState, HungerState,
-                                              MoodState, SleepState)
+from modules.simulation.biosim.BioEnum import (ActivityLevel, GlycemiaState, HungerState, MoodState, SleepState)
 from modules.simulation.biosim.EngineSlice import EngineSlice
 
 # 字段名用 Literal：调用处写错字段名，静态检查就抓。
@@ -58,7 +57,6 @@ for _field, _enum in _TABLES:
 # ---------- 缺省模板 ----------
 LINE = (
     "{clock}"
-    " | 睡眠:{sleep} 情绪:{mood}"
     " | 能量:{energy:.0f}/100（{energy_label}）"
     " | 饱腹:{fullness:.0f}/100（{fullness_label}）"
     " | 心情:{mood_score:.0f}/100（{mood_label}）"

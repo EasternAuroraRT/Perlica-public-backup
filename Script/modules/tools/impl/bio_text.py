@@ -46,7 +46,6 @@ QUALITY: Mapping[QualityField, tuple[str, str, str]] = {
     "glucose": ("偏低", "正常", "偏高"),
 }
 
-# 枚举加了成员却忘了翻译，这里立刻炸 —— 而不是渲染时悄悄退化成英文原值。
 _TABLES: tuple[tuple[LabelField, type[Enum]], ...] = (
     ("sleep", SleepState), ("activity", ActivityLevel), ("hunger", HungerState),
     ("mood", MoodState), ("glycemia", GlycemiaState),
@@ -59,7 +58,7 @@ for _field, _enum in _TABLES:
 # ---------- 缺省模板 ----------
 LINE = (
     "{clock}"
-    " | 睡眠:{sleep} 活动:{activity} 饥饿:{hunger} 情绪:{mood}"
+    " | 睡眠:{sleep} 情绪:{mood}"
     " | 能量:{energy:.0f}/100（{energy_label}）"
     " | 饱腹:{fullness:.0f}/100（{fullness_label}）"
     " | 心情:{mood_score:.0f}/100（{mood_label}）"

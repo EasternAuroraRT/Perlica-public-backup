@@ -7,6 +7,7 @@ import threading
 from datetime import datetime
 import asyncio
 import json
+import os
 from enum import * # pyright: ignore[reportWildcardImportFromLibrary]
 
 import napcat as np
@@ -32,12 +33,41 @@ active_chatwindow: ChatWindow
 
 sysprompt: list[ChatCompletionMessageParam] = [] # Do not easily read or write this variant -- unless you know what you are doing!
 
+chat_log_dir: Path = Path("./working_cache/chat/")
+CHAT_LOG_FILE = "chat_log.json"
+
+
+def save_chat_log(dirpath: str | Path = chat_log_dir) -> Path:
+    directory = Path(dirpath)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / CHAT_LOG_FILE
+    temp = target.with_name(target.name + ".tmp")
+    with open(temp, "w", encoding="utf-8") as handle:
+        json.dump(chat_log, handle, ensure_ascii=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp, target)
+    log.info(f"[env] Chat history (item counts: {len(chat_log)}) saved: {target}")
+    return target
+
+
+def load_chat_log(dirpath: str | Path = chat_log_dir) -> list[ChatCompletionMessageParam]:
+    directory = Path(dirpath)
+    target = directory / CHAT_LOG_FILE
+    if not target.exists():
+        return []
+    with open(target, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    log.info(f"[env] Chat history loaded with {len(payload)} items.")
+    return payload if isinstance(payload, list) else []
+
+
+chat_log: list[ChatCompletionMessageParam] = load_chat_log() # 启动时从 working_cache/chat/ 恢复
+
 no_disturb_mode = False
 
 # 睡着 / 静音期间积压的事件消息（与 main.py、alarm.py 共享）
 pending_event_msgs: list[ChatCompletionContentPartParam] = []
-
-
 def take_pending() -> list[ChatCompletionContentPartParam]:
     """取走积压的事件消息（取完即清空）。"""
     taken = pending_event_msgs.copy()
@@ -51,8 +81,8 @@ def _now_hour() -> float:
     now = datetime.now()
     return now.hour + now.minute / 60.0
 
-
-biosim_engine, biosim_clock = bio.standard_with_clock(start_hour=_now_hour())
+bio_engine_checkpoint_path: Path = Path("./working_cache/biosim/")
+biosim_engine, biosim_clock = bio.standard_with_clock(start_hour=_now_hour(), checkpoint=bio_engine_checkpoint_path)
 
 async def init():
     async with npclient:
@@ -109,15 +139,19 @@ async def init():
         sysprompt.append({"role": "system", "content": role_prompt})
         if biosim_engine is not None:
             biosim_clock.start()
-            log.info(f"[env] Starting BioSim:\n{biosim_engine.get_slice()}")
+            log.debug(f"[env] Starting BioSim:\n{biosim_engine.get_slice()}")
+            from modules.tools.impl import bio_text
+            log.info(f"Current state: \n{bio_text.state_text(biosim_engine)}\n")
 
 def reload():
     chatwindows.clear()
     sysprompt.clear()
     asyncio.run(init())
 
-def get_status_prompt() -> str:
+def get_chatwindow_prompt() -> str:
     window = active_chatwindow
+    if not window:
+        return "当前未激活聊天窗口"
     return f'''当前激活聊天窗口：
 {chat_type_str[window.chat_type]}`{window.name}`({window.chat_id})
 '''

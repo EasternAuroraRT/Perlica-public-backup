@@ -7,17 +7,26 @@ from __future__ import annotations
 
 import random
 
+from pathlib import Path
+
 from .EngineClock import EngineClock
 from .BasicEffects.physics import EatEffect, ExerciseEffect, SleepEffect, WakeEffect
 from .BioEngine import BioEngine
 
 
-def standard(*, start_hour: float = 8.0, time_step: float = 0.05) -> BioEngine:
-    """标准模板：常态生理已挂好、参数写在明面上，拿来就能用。"""
+def standard(*, start_hour: float = 8.0, time_step: float = 0.05,
+             checkpoint: str | Path | None = None) -> BioEngine:
+    """标准模板：常态生理已挂好、参数写在明面上，拿来就能用。
+
+    checkpoint 只是"存档位置"：**那里有存档就恢复，没有就当新的一天**。
+    恢复出来就不再叠一遍常态（存档里本来就装着整套世界）；文件读不了会抛。
+    """
     from .BasicEffects.physiology import (EnergyDynamics, FullnessDynamics, GlucoseDynamics,
                              MoodDynamics, StressDynamics)
 
-    engine = BioEngine(start_hour=start_hour, time_step=time_step)
+    engine = BioEngine(start_hour=start_hour, time_step=time_step, checkpoint=checkpoint)
+    if engine.effects:      # 存档里带着世界，别再叠常态
+        return engine
     engine.add_effects(
         # 常态：清醒静息的基准
         EnergyDynamics(base_cost=2.0, low_glycemia_cost=4.0),
@@ -30,10 +39,10 @@ def standard(*, start_hour: float = 8.0, time_step: float = 0.05) -> BioEngine:
 
 
 def standard_with_clock(*, start_hour: float = 8.0, time_step: float = 0.05,
-                        update_interval: float = 0.1,
-                        time_scale: float = 1.0) -> tuple[BioEngine, EngineClock]:
+                        update_interval: float = 0.1, time_scale: float = 1.0,
+                        checkpoint: str | Path | None = None) -> tuple[BioEngine, EngineClock]:
     """标准模板 + 时钟：按真实时间跑的用法。"""
-    engine = standard(start_hour=start_hour, time_step=time_step)
+    engine = standard(start_hour=start_hour, time_step=time_step, checkpoint=checkpoint)
     return engine, EngineClock(engine, update_interval=update_interval, time_scale=time_scale)
 
 

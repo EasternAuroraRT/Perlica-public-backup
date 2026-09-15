@@ -8,8 +8,7 @@ config.json
 test.py
 memory/
 diary/*
-history/group/*
-history/private/*
+history
 history/*.json
 working_cache/*
 private_space/

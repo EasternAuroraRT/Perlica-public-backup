@@ -1,6 +1,6 @@
 from .BioEnum import SleepState, ActivityLevel, HungerState, MoodState, GlycemiaState
 
-from .types import Aspects, BioState, StateVec, Dimension, Influence, Tick
+from .types import AspectPatch, Aspects, BioState, StateVec, Dimension, Influence, Tick
 from .Effect import Effect
 from .BasicEffects.physics import EatEffect, ExerciseEffect, SleepEffect, WakeEffect
 from .BasicEffects.physiology import (EnergyDynamics, GlucoseDynamics, FullnessDynamics, StressDynamics,
@@ -12,7 +12,7 @@ from .templates import sleep_effect, standard, standard_with_clock
 
 __all__ = [
     "SleepState", "ActivityLevel", "HungerState", "MoodState", "GlycemiaState",
-    "Aspects", "BioState", "StateVec", "Dimension", "Influence", "Tick",
+    "Aspects", "AspectPatch", "BioState", "StateVec", "Dimension", "Influence", "Tick",
     "Effect",
     "EatEffect", "ExerciseEffect", "SleepEffect", "WakeEffect",
     "EnergyDynamics", "GlucoseDynamics", "FullnessDynamics", "StressDynamics", "MoodDynamics",

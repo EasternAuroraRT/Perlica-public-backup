@@ -55,6 +55,8 @@ class Aspects:
     elapsed_hours: float
     sleep_duration: float
     last_sleep_duration: float
+    digest_left: float
+    exercise_left: float
 
 
 @dataclass
@@ -70,6 +72,8 @@ class AspectPatch:
     elapsed_hours: float | None = None
     sleep_duration: float | None = None
     last_sleep_duration: float | None = None
+    digest_left: float | None = None
+    exercise_left: float | None = None
 
     def apply_to(self, aspects: Aspects) -> None:
         """把声明覆盖到状态上：只动给了值的字段。"""
@@ -87,6 +91,10 @@ class AspectPatch:
             aspects.sleep_duration = self.sleep_duration
         if self.last_sleep_duration is not None:
             aspects.last_sleep_duration = self.last_sleep_duration
+        if self.digest_left is not None:
+            aspects.digest_left = self.digest_left
+        if self.exercise_left is not None:
+            aspects.exercise_left = self.exercise_left
 
 
 # 两张表的字段必须一一对应；只改一边，这里立刻炸。

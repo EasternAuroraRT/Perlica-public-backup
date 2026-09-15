@@ -1,7 +1,10 @@
 """引擎：计算器。把当前挂着的效果声明整合成状态变化，别的什么都不管。"""
 from __future__ import annotations
 
+import os
+import pickle
 import threading
+from pathlib import Path
 
 from .Effect import Effect
 from .EngineSlice import EngineSlice
@@ -19,7 +22,8 @@ class BioEngine:
       所以加一个维度只要动那一个文件。
     """
 
-    def __init__(self, *, start_hour: float = 8.0, time_step: float = 0.05) -> None:
+    def __init__(self, *, start_hour: float = 8.0, time_step: float = 0.05,
+                 checkpoint: str | Path | None = None) -> None:
         self.time_step = time_step
         self._dimensions = {d.name: d for d in StateVec.elements}
 
@@ -34,6 +38,8 @@ class BioEngine:
                 elapsed_hours=0.0,
                 sleep_duration=0.0,
                 last_sleep_duration=0.0,
+                digest_left=0.0,
+                exercise_left=0.0,
             ),
         )
 
@@ -43,6 +49,60 @@ class BioEngine:
         self._mul = StateVec()
         self._mul.fill(1.0)
         self._lock = threading.RLock()
+
+        self._checkpoint_dir = Path(checkpoint) if checkpoint is not None else None
+        if self._checkpoint_dir is not None:
+            self.load_checkpoint(self._checkpoint_dir)
+
+    # ---------- 存档 ----------
+    CHECKPOINT_FILE = "checkpoint.pkl"
+    CHECKPOINT_FORMAT = 1
+
+    def save_checkpoint(self, dirpath: str | Path | None = None) -> Path:
+        """把当前状态写到目录里（状态 + 挂着的效果，格式内部自定）。
+
+        不传路径就写回构造时给的那个 —— 路径只配一次。
+        """
+        directory = Path(dirpath) if dirpath is not None else self._checkpoint_dir
+        if directory is None:
+            raise ValueError("没有存档路径：要么传参数，要么构造时给 checkpoint")
+        with self._lock:
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / self.CHECKPOINT_FILE
+            payload = {
+                "format": self.CHECKPOINT_FORMAT,
+                "state": self._bio,
+                "effects": list(self._effects),
+            }
+            # 原子写：先写 .tmp 再替换 —— 读半个存档比读不到更糟
+            temp = target.with_name(target.name + ".tmp")
+            with open(temp, "wb") as handle:
+                pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp, target)
+            return target
+
+    def load_checkpoint(self, dirpath: str | Path | None = None) -> bool:
+        """从目录恢复。**那里没有存档就当新的一天**（返回 False），不是错误。
+
+        文件在、却读不了则照抛（UnpicklingError / ValueError）—— 那是异常，
+        不该被当成"还没有存档"悄悄吞掉。
+        """
+        directory = Path(dirpath) if dirpath is not None else self._checkpoint_dir
+        if directory is None:
+            raise ValueError("没有存档路径：要么传参数，要么构造时给 checkpoint")
+        target = directory / self.CHECKPOINT_FILE
+        if not target.exists():
+            return False
+        with open(target, "rb") as handle:
+            payload = pickle.load(handle)
+        if not isinstance(payload, dict) or payload.get("format") != self.CHECKPOINT_FORMAT:
+            raise ValueError("存档格式不认识: %s" % target)
+        with self._lock:
+            self._bio = payload["state"]
+            self._effects = list(payload["effects"])
+        return True
 
     # ---------- 挂载 ----------
     def add_effect(self, effect: Effect) -> bool:

@@ -31,20 +31,22 @@ class EatEffect(Effect):
         self.glucose_gain = glucose_gain
         self.energy_gain = energy_gain
         self.mood_gain = mood_gain
-        self._left = digest_hours * portion
         self._inf = Influence()
+        self._inf.aspects.digest_left = digest_hours * portion   # 进度归状态，不藏在效果里
         self._inf.instant.fullness = fullness_gain * portion
-        span = max(self._left, 1e-9)
+        span = max(digest_hours * portion, 1e-9)
         self._inf.delta.glucose = glucose_gain * portion * quality / span
         self._inf.delta.energy = energy_gain * quality / span
         self._inf.delta.mood = mood_gain * min(portion, 0.8) / span
 
     def influence(self, state: BioState, tick: Tick) -> Influence:
-        self._left -= tick.dt
+        # 落地那次 dt=0：只声明初始进度，别把它减掉（那时状态里还没有它）
+        if tick.dt > 0.0:
+            self._inf.aspects.digest_left = state.aspects.digest_left - tick.dt
         return self._inf
 
     def alive(self, state: BioState, tick: Tick) -> bool:
-        return self._left > 0
+        return state.aspects.digest_left > 0
 
 
 class ExerciseEffect(Effect):
@@ -55,8 +57,8 @@ class ExerciseEffect(Effect):
         self.intensity = intensity
         self.energy_rate = energy_rate
         self.glucose_rate = glucose_rate
-        self._left = minutes / 60.0
         self._inf = Influence()
+        self._inf.aspects.exercise_left = minutes / 60.0
         self._inf.delta.energy = -energy_rate * intensity
         self._inf.delta.glucose = -glucose_rate * intensity
         self._inf.aspects.activity = ActivityLevel.ACTIVE
@@ -67,11 +69,13 @@ class ExerciseEffect(Effect):
         return "你还躺着，现在动不了。"
 
     def influence(self, state: BioState, tick: Tick) -> Influence:
-        self._left -= tick.dt
+        # 同上：落地那次 dt=0，别把刚声明的进度减掉
+        if tick.dt > 0.0:
+            self._inf.aspects.exercise_left = state.aspects.exercise_left - tick.dt
         return self._inf
 
     def alive(self, state: BioState, tick: Tick) -> bool:
-        return self._left > 0
+        return state.aspects.exercise_left > 0
 
     def on_expire(self, state: BioState, tick: Tick) -> None:
         state.aspects.activity = ActivityLevel.MODERATE

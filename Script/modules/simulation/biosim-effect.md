@@ -4,7 +4,7 @@
 
 ## 0. 结构
 
-```
+```plaintext
 modules/simulation/biosim/
   __init__.py          包出口：所有公开名字
   __main__.py          可运行示例
@@ -209,3 +209,25 @@ class CoffeeEffect(Effect):
 
 前五个组成 `BasicEffects.physiology.BASELINE`；`templates.standard` 按上表的数字把它们挂好。
 睡眠时长没有配置项：它是"回满精力要多久"的结果（净 +7/h），再叠上按概率掷出来的随机。
+
+## 11. 存档（checkpoint）
+
+```python
+engine.save_checkpoint("/path/to/ckpt")            # -> <dir>/checkpoint.pkl
+engine = standard(checkpoint="/path/to/ckpt")      # 有存档就恢复，没有就当新的一天
+engine.save_checkpoint()                           # 不传路径就写回上面那个位置
+```
+
+- 存的是**状态 + 当时挂着的效果**。效果也是状态：消化到一半、正在运动、睡着 —— 只存数字不够。
+- **给了路径 ≠ 那里就有存档**：没有就当新的一天（照常叠常态）；有就恢复、且不再叠一遍常态。
+  判据是"引擎里是否已经有挂着的效果"。
+- 写盘是**原子的**（先写 `.tmp` 再 `os.replace`）：中途崩了也不会留下半个存档，而读半个存档比读不到更糟。
+- **文件在、却读不了会抛**（`UnpicklingError` / `ValueError`）—— 那是异常，不是"还没有存档"，
+  不该被当成新的一天悄悄吞掉。要不要兜，是调用方的事。
+- 进度（消化 / 运动 / 睡眠）都在 `Aspects` 里，所以状态本身就是完整的；
+  效果对象另存一份是因为它们带着自己的参数与随机源。
+- 格式是内部自定的 pickle：**改了效果字段名之后旧存档读不回来**。这是有意的 —— 读不了就报错，不猜。
+  调用方该 `try/except` 兜住并退回新的一天。
+
+注意一个容易踩的点：`add_effect` 落地那一刻也会调 `influence()`，而那次 `tick.dt == 0`。
+效果若要声明"进度"这类状态，得先判断 `tick.dt > 0` 再递减，否则会把自己刚声明的进度减掉、当场被判死。

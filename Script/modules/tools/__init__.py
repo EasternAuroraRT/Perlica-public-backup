@@ -116,10 +116,8 @@ def type_del(args: dict) -> list[ChatCompletionContentPartParam]:
 def send_msg(_: dict) -> list[ChatCompletionContentPartParam]:
     if not env.active_chatwindow.content:
         return [{'type': 'text', 'text': "你还没有输入任何内容！"}]
-    if asyncio.run(env.active_chatwindow.send()):
-        return [{'type': 'text', 'text': f"已向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送{str(env.active_chatwindow)}. 当前聊天窗口输入框已清空."}]
-    else:
-        return [{'type': 'text', 'text': f"向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送消息失败."}]
+    asyncio.run(env.active_chatwindow.send())
+    return [{'type': 'text', 'text': f"已向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送{str(env.active_chatwindow)}. 当前聊天窗口输入框已清空."}]
 
 # def end_action(_: dict) -> list[ChatCompletionContentPartParam]:
 #     return placeholder(_)

@@ -17,10 +17,6 @@ class ChatThreadData:
     current_worker: Optional[int] = None
     compress_thread: Optional[Future] = None
     compressing_messages: list[ChatCompletionMessageParam] = []
-    uncompressed_messages: list[ChatCompletionMessageParam] = []
-
-    def __init__(self) -> None:
-        self.uncompressed_messages = env.chat_log
 
 chat_data1: ChatThreadData = ChatThreadData()
 
@@ -58,11 +54,12 @@ def _release_worker(chat_thread_data: ChatThreadData, my_id: int) -> None:
             chat_thread_data.condition.notify_all()
 
 
-def _compress_message(chat_thread_data: ChatThreadData) -> None:
+def _compress_message(chat_thread_data: ChatThreadData,
+                      uncompressed_messages: list[ChatCompletionMessageParam]) -> None:
     if not chat_thread_data.compress_thread:
-        chat_thread_data.compressing_messages.extend(chat_thread_data.uncompressed_messages)
+        chat_thread_data.compressing_messages.extend(uncompressed_messages)
         chat_thread_data.compress_thread = ThreadPoolExecutor().submit(get_compressed_context, chat_thread_data.compressing_messages)
-        chat_thread_data.uncompressed_messages.clear()
+        uncompressed_messages.clear()
 
 
 def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatCompletionContentPartParam], high_priority: bool) -> None:
@@ -70,7 +67,7 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
     my_id = _acquire_worker(cur_chat_data)
     # Initializing
     compressing_messages = cur_chat_data.compressing_messages
-    uncompressed_messages = cur_chat_data.uncompressed_messages
+    uncompressed_messages = env.chat_log
     compressing_bkup = compressing_messages.copy()
     uncompressed_bkup = uncompressed_messages.copy()
     # Check compressed message
@@ -187,7 +184,7 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
         log.debug("Uncompressed Messages:\n"+str(uncompressed_messages)[:config.message_debug_max_length]+f"{f'... (len={_uncompressed_str_len})'if _uncompressed_str_len>config.message_debug_max_length else ''}")
         if len(uncompressed_messages) > config.message_compress_lenth_threshold:
             log.info("Too many messages. Trying to compress.")
-            _compress_message(cur_chat_data)
+            _compress_message(cur_chat_data, uncompressed_messages)
     except Exception as e:
         log.error(f"[act->_chat_thread_func->chat failure] {e}")
         compressing_messages = compressing_bkup

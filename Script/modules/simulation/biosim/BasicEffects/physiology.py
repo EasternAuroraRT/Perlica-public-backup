@@ -1,7 +1,10 @@
-"""常态生理：常驻效果（BASELINE）+ 连续量到离散量的映射。
+"""常态生理：常驻效果（baseline_effects）+ 连续量到离散量的映射。
 
 这里的效果只声明"清醒静息下的基准"，参数都在构造时给；睡眠、运动等状态
 由各自的效果用乘区或基础值声明。
+
+单位约定：`*_per_hour` 是每小时的变化速率；`energy_low` / `happy_*` /
+`irritable_*` 是 0~100 的阈值；`hunger_factor` 是无量纲权重。
 """
 from __future__ import annotations
 
@@ -41,15 +44,16 @@ def glycemia_of(glucose: float) -> GlycemiaState:
 class EnergyDynamics(Effect):
     """能量：清醒基准代谢；血糖过低时额外掉（睡着不算这笔）。"""
 
-    def __init__(self, *, base_cost: float = 2.0, low_glycemia_cost: float = 4.0) -> None:
-        self.base_cost = base_cost
-        self.low_glycemia_cost = low_glycemia_cost
+    def __init__(self, *, base_cost_per_hour: float = 2.0,
+                 low_glycemia_cost_per_hour: float = 4.0) -> None:
+        self.base_cost_per_hour = base_cost_per_hour
+        self.low_glycemia_cost_per_hour = low_glycemia_cost_per_hour
         self._inf = Influence()
 
     def influence(self, state: BioState, tick: Tick) -> Influence:
         glycemia = glycemia_of(state.current_state.glucose)
-        penalty = self.low_glycemia_cost * _LOW_GLYCEMIA[glycemia] * _AWAKE[state.aspects.sleep]
-        self._inf.delta.energy = -self.base_cost - penalty
+        penalty = self.low_glycemia_cost_per_hour * _LOW_GLYCEMIA[glycemia] * _AWAKE[state.aspects.sleep]
+        self._inf.delta_per_hour.energy = -self.base_cost_per_hour - penalty
         return self._inf
 
 
@@ -62,7 +66,7 @@ class GlucoseDynamics(Effect):
 
     def influence(self, state: BioState, tick: Tick) -> Influence:
         glycemia = glycemia_of(state.current_state.glucose)
-        self._inf.delta.glucose = -self.decay_per_hour * _GLUCOSE_BAND_FACTOR[glycemia]
+        self._inf.delta_per_hour.glucose = -self.decay_per_hour * _GLUCOSE_BAND_FACTOR[glycemia]
         return self._inf
 
 
@@ -75,17 +79,17 @@ class FullnessDynamics(Effect):
 
     def influence(self, state: BioState, tick: Tick) -> Influence:
         glycemia = glycemia_of(state.current_state.glucose)
-        self._inf.delta.fullness = -self.decay_per_hour * _FULLNESS_BAND_FACTOR[glycemia]
+        self._inf.delta_per_hour.fullness = -self.decay_per_hour * _FULLNESS_BAND_FACTOR[glycemia]
         return self._inf
 
 
 class StressDynamics(Effect):
     """压力：能量低、饥饿时上升，恢复时回落。"""
 
-    def __init__(self, *, rise_rate: float = 10.0, fall_rate: float = 5.0,
+    def __init__(self, *, rise_rate_per_hour: float = 10.0, fall_rate_per_hour: float = 5.0,
                  energy_low: float = 40.0, hunger_factor: float = 0.8) -> None:
-        self.rise_rate = rise_rate
-        self.fall_rate = fall_rate
+        self.rise_rate_per_hour = rise_rate_per_hour
+        self.fall_rate_per_hour = fall_rate_per_hour
         self.energy_low = energy_low
         self.hunger_factor = hunger_factor
         self._inf = Influence()
@@ -94,17 +98,17 @@ class StressDynamics(Effect):
         energy = state.current_state.energy
         hungry = hunger_of(state.current_state.fullness) is HungerState.HUNGRY
         deficit = max(0.0, (self.energy_low - energy) / self.energy_low)
-        gain = self.rise_rate * (deficit + (self.hunger_factor if hungry else 0.0))
+        gain_per_hour = self.rise_rate_per_hour * (deficit + (self.hunger_factor if hungry else 0.0))
 
         content = hunger_of(state.current_state.fullness) is HungerState.CONTENT
         if energy > self.energy_low and not hungry:
-            loss = self.fall_rate
+            loss_per_hour = self.fall_rate_per_hour
         elif energy > self.energy_low * 0.5 and content:
-            loss = self.fall_rate * 0.5
+            loss_per_hour = self.fall_rate_per_hour * 0.5
         else:
-            loss = 0.0
+            loss_per_hour = 0.0
 
-        stress = state.aspects.stress + (gain - loss) * tick.dt
+        stress = state.aspects.stress + (gain_per_hour - loss_per_hour) * tick.dt_hours
         self._inf.aspects.stress = min(100.0, max(0.0, stress))
         return self._inf
 
@@ -112,9 +116,9 @@ class StressDynamics(Effect):
 class MoodDynamics(Effect):
     """心情：向目标值收敛，目标由压力与能量决定。"""
 
-    def __init__(self, *, response_rate: float = 2.0, happy_stress: float = 30.0,
+    def __init__(self, *, response_rate_per_hour: float = 2.0, happy_stress: float = 30.0,
                  happy_energy: float = 60.0, irritable_stress: float = 70.0) -> None:
-        self.response_rate = response_rate
+        self.response_rate_per_hour = response_rate_per_hour
         self.happy_stress = happy_stress
         self.happy_energy = happy_energy
         self.irritable_stress = irritable_stress
@@ -129,12 +133,24 @@ class MoodDynamics(Effect):
         elif stress >= self.irritable_stress:
             target = min(target, 20.0)
         target = min(100.0, max(0.0, target))
-        self._inf.delta.mood = (target - state.current_state.mood) * self.response_rate
+        # response_rate_per_hour 乘的是"每小时向目标靠拢的比例"；这里本来就是每小时速率，
+        # 所以直接给 delta_per_hour，不再乘 dt（由引擎积分）。
+        self._inf.delta_per_hour.mood = (target - state.current_state.mood) * self.response_rate_per_hour
         return self._inf
 
 
-# 常态：清醒静息下的基础生理变化。它不是引擎的默认行为，而是一组普通的效果插件。
-# 想要不同的数字，就在模板里用构造参数写出来（见 templates.standard）。
-BASELINE: tuple[type[Effect], ...] = (
-    EnergyDynamics, GlucoseDynamics, FullnessDynamics, StressDynamics, MoodDynamics,
-)
+def baseline_effects() -> list[Effect]:
+    """常态：清醒静息下的基础生理变化。
+
+    它不是引擎的默认行为，而是一组普通的效果插件；数值全都写在这里，
+    改一个数字一眼看得出它改的是谁。想要另一套平衡，自己拼一组即可。
+    """
+    return [
+        EnergyDynamics(base_cost_per_hour=2.0, low_glycemia_cost_per_hour=4.0),
+        GlucoseDynamics(decay_per_hour=6.0),
+        FullnessDynamics(decay_per_hour=20.0),
+        StressDynamics(rise_rate_per_hour=10.0, fall_rate_per_hour=5.0,
+                       energy_low=40.0, hunger_factor=0.8),
+        MoodDynamics(response_rate_per_hour=2.0, happy_stress=30.0,
+                     happy_energy=60.0, irritable_stress=70.0),
+    ]

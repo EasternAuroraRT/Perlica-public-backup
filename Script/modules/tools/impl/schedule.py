@@ -193,7 +193,7 @@ def cancel_schedule(schedule_id: str) -> None:
         schedule_id: 要取消的日程唯一标识符（UUID 字符串）。
     """
     if schedule_id not in _schedules:
-        return
+        raise RuntimeError(f"Cannot find schedule with id {schedule_id}.")
 
     if schedule_id in _timers:
         _timers[schedule_id].cancel()

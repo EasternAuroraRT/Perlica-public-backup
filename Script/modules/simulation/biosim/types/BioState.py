@@ -47,16 +47,19 @@ class Aspects:
 
     字段都没有默认值：少给一个参数就直接报错。因此读 aspects.xxx 永远安全，
     不需要 .get() 兜底，也不需要运行时检查。
+
+    单位：clock_hour / sleep_duration_hours / last_sleep_duration_hours /
+    digest_left_hours / exercise_left_hours / elapsed_hours 全是小时。
     """
     sleep: SleepState
     activity: ActivityLevel
     stress: float
     clock_hour: float
     elapsed_hours: float
-    sleep_duration: float
-    last_sleep_duration: float
-    digest_left: float
-    exercise_left: float
+    sleep_duration_hours: float
+    last_sleep_duration_hours: float
+    digest_left_hours: float
+    exercise_left_hours: float
 
 
 @dataclass
@@ -70,10 +73,10 @@ class AspectPatch:
     stress: float | None = None
     clock_hour: float | None = None
     elapsed_hours: float | None = None
-    sleep_duration: float | None = None
-    last_sleep_duration: float | None = None
-    digest_left: float | None = None
-    exercise_left: float | None = None
+    sleep_duration_hours: float | None = None
+    last_sleep_duration_hours: float | None = None
+    digest_left_hours: float | None = None
+    exercise_left_hours: float | None = None
 
     def apply_to(self, aspects: Aspects) -> None:
         """把声明覆盖到状态上：只动给了值的字段。"""
@@ -87,14 +90,14 @@ class AspectPatch:
             aspects.clock_hour = self.clock_hour
         if self.elapsed_hours is not None:
             aspects.elapsed_hours = self.elapsed_hours
-        if self.sleep_duration is not None:
-            aspects.sleep_duration = self.sleep_duration
-        if self.last_sleep_duration is not None:
-            aspects.last_sleep_duration = self.last_sleep_duration
-        if self.digest_left is not None:
-            aspects.digest_left = self.digest_left
-        if self.exercise_left is not None:
-            aspects.exercise_left = self.exercise_left
+        if self.sleep_duration_hours is not None:
+            aspects.sleep_duration_hours = self.sleep_duration_hours
+        if self.last_sleep_duration_hours is not None:
+            aspects.last_sleep_duration_hours = self.last_sleep_duration_hours
+        if self.digest_left_hours is not None:
+            aspects.digest_left_hours = self.digest_left_hours
+        if self.exercise_left_hours is not None:
+            aspects.exercise_left_hours = self.exercise_left_hours
 
 
 # 两张表的字段必须一一对应；只改一边，这里立刻炸。

@@ -176,7 +176,6 @@ def get_image_by_url(args: dict) -> list[ChatCompletionContentPartParam]:
             log.error(f"[tools->get_image_by_url] {e}")
             return [{'type': 'text', 'text': f"Failed to get image from url: {url}\nError: {e}"}]
 
-
 def get_image_by_path(args: dict) -> list[ChatCompletionContentPartParam]:
     from .impl.image_processor import get_image_base64_from_path, get_image_description_from_base64
     path = get_typed_arg(args, 'path', str)
@@ -544,11 +543,10 @@ def set_no_disturb_on(args: dict) -> list[ChatCompletionContentPartParam]:
     disturber = threading.Timer(minutes*60, action)
     disturber.daemon = True
     disturber.start()
-    return [{"type": "text", "text": f'No disturbing mode is ON and will be set to OFF automatically in {minutes} minute(s).'}]
-
+    return [{"type": "text", "text": f'No-disturbing mode is ON and will be set to OFF automatically in {minutes} minute(s).'}]
 def set_no_disturb_off(_: dict) -> list[ChatCompletionContentPartParam]:
     env.no_disturb_mode = False
-    return [{"type": "text", "text": 'No disturbing mode is set to OFF.'}]
+    return [{"type": "text", "text": 'No-disturbing mode is set to OFF.'}]
 
 def download_file(args: dict) -> list[ChatCompletionContentPartParam]:
     from .impl import file_manager
@@ -607,17 +605,17 @@ def goto_sleep(_: dict) -> list[ChatCompletionContentPartParam]:
     if reason:
         return [{"type": "text", "text": reason}]
     env.biosim_engine.add_effect(effect)
-    return [{"type": "text", "text": "已躺下，正在入睡。请调用 end_action 结束本轮——睡够了自己会醒，闹钟或紧急事件也会把你叫醒。"}]
+    return [{"type": "text", "text": "Sleeping... Call end_action to terminate. You may wake up by yourself or by alarms and emergency."}]
 
 def wake_up(_: dict) -> list[ChatCompletionContentPartParam]:
     env.biosim_engine.add_effect(biosim.WakeEffect())
-    return [{"type": "text", "text": "已醒来。"}]
+    return [{"type": "text", "text": "Awake."}]
 
 def eat(args: dict) -> list[ChatCompletionContentPartParam]:
     from .impl import food
     name = get_typed_arg(args, "food", str)
     if not name.strip():
-        return [{"type": "text", "text": "没说要吃什么。"}]
+        return [{"type": "text", "text": "No food given."}]
     portion, quality = food.judge(name, get_typed_arg(args, "amount", (int, float), 1.0))
     effect = biosim.EatEffect(portion=portion, quality=quality)
     reason = effect.refusal(env.biosim_engine.get_slice())
@@ -630,7 +628,7 @@ def exercise(args: dict) -> list[ChatCompletionContentPartParam]:
     from .impl import exertion
     kind = get_typed_arg(args, "kind", str)
     if not kind.strip():
-        return [{"type": "text", "text": "没说要做什么运动。"}]
+        return [{"type": "text", "text": "No exercise given."}]
     intensity, minutes = exertion.judge(kind, get_typed_arg(args, "minutes", (int, float), 20.0))
     effect = biosim.ExerciseEffect(intensity=intensity, minutes=minutes)
     reason = effect.refusal(env.biosim_engine.get_slice())
@@ -644,7 +642,7 @@ def stop_exercise(_: dict) -> list[ChatCompletionContentPartParam]:
         if isinstance(effect, biosim.ExerciseEffect):
             env.biosim_engine.remove_effect(effect)
             break
-    return [{"type": "text", "text": "已停止运动。"}]
+    return [{"type": "text", "text": "Stopped."}]
 
 # -------------
 #endregion

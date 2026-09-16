@@ -10,9 +10,9 @@ from .types import BioState, Influence, Tick
 class Effect(ABC):
     """可被引擎直接挂载的效果插件。
 
-    **参数在构造时给**（这是它唯一的外部依赖），之后每次被问到时只拿到
-    (state, tick) —— 没有配置袋、没有引擎。所以它的全部行为都能从它自己的
-    字段推出来，同一个模拟里放两个参数不同的同类效果也天经地义。
+    **参数在构造时给**（这是它唯一的外部依赖），之后每次被问到只拿到 (state, tick)。
+    全程声明式：`influence` 只交"这一帧想让状态怎么变"，连到期那一帧的终态也由它自己
+    声明；没有任何直接写 state 的入口。
     """
 
     @abstractmethod
@@ -21,11 +21,8 @@ class Effect(ABC):
         ...
 
     def alive(self, state: BioState, tick: Tick) -> bool:
-        """还活着吗；False 则本帧末被摘掉。"""
+        """还活着吗；False 则本帧末被摘掉（终态在最后一帧的声明里，没有额外收尾函数）。"""
         return True
-
-    def on_expire(self, state: BioState, tick: Tick) -> None:
-        """被摘掉时收尾 —— 唯一允许直接写状态的地方。"""
 
     def refusal(self, observation: EngineSlice) -> str | None:
         """挂上去有没有意义；没意义就把原因说出来。问的是外面看得见的读数。"""

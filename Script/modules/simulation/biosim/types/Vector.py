@@ -71,22 +71,9 @@ class VectorMeta(type):
                 taken.add(dim_name)
             namespace["elements"] = tuple(elements)
             namespace["_element_names"] = tuple(slots)
+            # 只生成 __slots__：属性名在"类被创建时"就定死（运行前确定），
+            # 值的初始化交给 Vector.__init__（按 elements 的 initial 兜底）。
             namespace["__slots__"] = tuple(slots)
-            if "__init__" not in namespace:
-                body = "".join(
-                    f"    self.{element.name} = {element.initial!r}\n"
-                    for element in elements
-                )
-                init_namespace: dict[str, Any] = {}
-                exec(
-                    compile(
-                        f"def __init__(self):\n{body}", f"<{name}.__init__>", "exec"
-                    ),
-                    init_namespace,
-                )
-                init = init_namespace["__init__"]
-                init.__qualname__ = f"{name}.__init__"
-                namespace["__init__"] = init
         return super().__new__(mcls, name, bases, namespace, **kwargs)
 
 

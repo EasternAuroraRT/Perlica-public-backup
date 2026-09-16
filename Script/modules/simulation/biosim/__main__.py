@@ -1,10 +1,12 @@
-"""示例：挂一组常态效果，推进时间，再挂行为效果看读数。"""
+"""示例：直接构造引擎、挂一组常态效果、推进时间、再挂行为效果看读数。"""
 from .BasicEffects.physics import EatEffect, ExerciseEffect, SleepEffect, WakeEffect
-from .templates import standard
+from .BasicEffects.physiology import baseline_effects
+from .BioEngine import BioEngine
 
 
 def main() -> None:
-    engine = standard(start_hour=8.0)
+    engine = BioEngine(start_clock_hour=8.0)
+    engine.add_effects(*baseline_effects())
     engine.advance(4.0)
     print("读数:", engine.get_slice())
 

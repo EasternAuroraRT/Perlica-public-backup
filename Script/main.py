@@ -68,11 +68,6 @@ async def main() -> None:
             log.warning(f"Some event is ignored but message is actually generated:\n{str(api_call_msg)}")
 
 
-def prepare_exit() -> None:
-    env.biosim_engine.save_checkpoint()
-    env.save_chat_log()
-    
-
 if __name__ == "__main__":
     __restart_times = 0
     __max_restart_times = 10
@@ -81,18 +76,18 @@ if __name__ == "__main__":
         try:
             asyncio.run(main())
         except UserRestart:
-            prepare_exit()
+            env.clean_up()
             log.warning("Restarting...")
             sys.exit(2)
         except KeyboardInterrupt:
             log.warning("Exit...")
-            prepare_exit()
+            env.clean_up()
             sys.exit(0)
         except Exception as e:
             log.error(f"[{__file__}] {e}\n{traceback.format_exc()}")
             if __restart_times > __max_restart_times:
                 log.fatal(f"[{__file__}] Retrying for over {__max_restart_times} times; Restarting...\n")
-                prepare_exit()
+                env.clean_up()
                 sys.exit(1)
             __restart_times += 1
             time.sleep(1)

@@ -7,12 +7,14 @@
     核心对文本一无所知，也不依赖这里任何东西。
 
 占位符（模板里能用到的键，见 fields()）
-    {clock} {time} {elapsed_hours} {sleep_duration} {last_sleep_duration}
+    {clock} {clock_hour} {elapsed_hours} {sleep_duration_hours} {last_sleep_duration_hours}
     {sleep} {activity} {hunger} {mood} {glycemia}                        中文标签
     {sleep_raw} {activity_raw} {hunger_raw} {mood_raw} {glycemia_raw}    原始值
     {energy} {fullness} {mood_score} {stress} {glucose}                  数值
     {energy_label} {fullness_label} {mood_label} {stress_label} {glucose_label}
     {actions}
+
+    clock_hour / elapsed_hours / sleep_duration_hours / last_sleep_duration_hours 单位均为小时。
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from enum import Enum
 from typing import Iterable, Literal, Mapping
 
 from modules.simulation.biosim.BioEngine import BioEngine
-from modules.simulation.biosim.BioEnum import (ActivityLevel, GlycemiaState, HungerState, MoodState, SleepState)
+from modules.simulation.biosim.BioEnum import ActivityLevel, GlycemiaState, HungerState, MoodState, SleepState
 from modules.simulation.biosim.EngineSlice import EngineSlice
 
 # 字段名用 Literal：调用处写错字段名，静态检查就抓。
@@ -57,11 +59,11 @@ for _field, _enum in _TABLES:
 # ---------- 缺省模板 ----------
 LINE = (
     "{clock}"
-    " | 能量:{energy:.0f}/100（{energy_label}）"
-    " | 饱腹:{fullness:.0f}/100（{fullness_label}）"
-    " | 心情:{mood_score:.0f}/100（{mood_label}）"
-    " | 压力:{stress:.0f}/100（{stress_label}）"
-    " | 上次睡眠:{last_sleep_duration:.1f}h"
+    "\n能量值:{energy:.0f}/100（{energy_label}）"
+    "\n饱腹感:{fullness:.0f}/100（{fullness_label}）"
+    "\n情绪值:{mood_score:.0f}/100（{mood_label}）"
+    "\n压力值:{stress:.0f}/100（{stress_label}）"
+    "\n上次睡眠:{last_sleep_duration_hours:.1f}h"
 )
 
 # ---------- 渲染 ----------
@@ -90,11 +92,11 @@ def _qual(field: QualityField, value: float) -> str:
 def fields(engine_slice: EngineSlice, actions: Iterable[str] = ()) -> dict[str, object]:
     """把读数摊平成占位符表（程序也可以直接取用）。"""
     return {
-        "clock": _clock(engine_slice.time),
-        "time": engine_slice.time,
+        "clock": _clock(engine_slice.clock_hour),
+        "clock_hour": engine_slice.clock_hour,
         "elapsed_hours": engine_slice.elapsed_hours,
-        "sleep_duration": engine_slice.sleep_duration,
-        "last_sleep_duration": engine_slice.last_sleep_duration,
+        "sleep_duration_hours": engine_slice.sleep_duration_hours,
+        "last_sleep_duration_hours": engine_slice.last_sleep_duration_hours,
         "sleep": _label("sleep", engine_slice.sleep),
         "sleep_raw": engine_slice.sleep.value,
         "activity": _label("activity", engine_slice.activity),

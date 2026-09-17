@@ -94,11 +94,20 @@ advance(due_hours)
 ## 5. 存档与恢复
 
 - 文件：`working_cache/biosim/checkpoint.pkl`；
-- 内容：`format` / `state` / `effects` / `saved_at_unix_seconds` / `sim_hours_per_real_hour`；
-- 写入：同步到此刻 → **锁内切片**（`pickle.dumps` 到内存）→ **锁外落盘**
+- 形状：开头一行**魔数 + 版本头**（`biosim-checkpoint v2`），后面是 pickle 的
+  `CheckpointPayload`（`format` / `state` / `effects` / `saved_at_unix_seconds` / `sim_hours_per_real_hour`）；
+- 写入：同步到此刻 → **锁内切片**（`header + pickle.dumps` 到内存）→ **锁外落盘**
   （`.tmp` → `fsync` → `os.replace`），IO 不占状态锁；
 - `saved_at` 取的就是同步那一刻，和状态是同一时刻；
-- 读取：缺文件 / 跨天 → `False`（当新的一天）；损坏 → 抛；同日 → 补算停机段；
+- 读取：缺文件 / 跨天 → `False`（当新的一天）；同日 → 补算停机段；
+- **存档是不可信输入**，版本号只证明格式代际，不保证内容没坏/没被塞私货。所以：
+  - 反序列化走白名单 `_SafeUnpickler`：只放行 `builtins` / `random` / `biosim` 自己的类，
+    别的直接判坏档 —— 堵死 pickle 的任意代码执行；
+  - 载入后做结构校验：`state` 必须是 `BioState`、`effects` 必须是效果对象、
+    时间/缩放必须是数字、枚举必须合法、数值必须有限；越界数值统一 `_clamp_state()` 夹回；
+  - **版本不认识 / 内容读坏 / 校验不过 → 不抛给调用方崩掉**：`__init__` 记 `load_error`、
+    当新的一天，退出时写回新档自愈；
+- `CHECKPOINT_FORMAT` 在 schema 变化（改字段名/改效果结构）时必须 +1；
 - `loaded_from_checkpoint` 是"是否真的恢复了"的正式判据（不要用"效果列表是否为空"）。
 
 ## 6. 单位与命名

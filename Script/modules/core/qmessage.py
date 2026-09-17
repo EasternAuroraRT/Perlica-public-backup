@@ -79,7 +79,8 @@ def parse_msgseg_to_chatseg(seg: Message|UnknownMessageSegment, multimodal: bool
         case Image():
             if seg.url is None:
                 return {"type": "text", "text": f"`Image({seg.file})`, url is not available.\n"}
-            return {"type": "image_url", "image_url": {"url": get_image_base64_from_url(url=seg.url)}}
+            # return {"type": "image_url", "image_url": {"url": get_image_base64_from_url(url=seg.url)}}
+            return {"type": "text", "text": f"Image(name={seg.file}, url={seg.url})"}
         case _:
             return {"type": "text", "text": str(seg)}
 

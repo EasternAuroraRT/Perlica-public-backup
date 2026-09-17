@@ -38,7 +38,7 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
     match event:
         case HeartbeatEvent():
             log.info("Heartbeat RCVD")
-            prompt = f"You are watching your terminal at {datetime.now().strftime("%m-%d-%H-%M")}. Do anything as you wish."
+            prompt = f"[Terminal][{datetime.now().strftime("%m-%d-%H-%M")}] Do anything as you wish."
             api_call_msg.append({'type':'text', 'text': prompt})
             event_urgency = EventUrgency.ImportantNoQueue
         case MessageEvent():
@@ -50,10 +50,10 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
                 match event:
                     case PrivateMessageEvent():
                         history.store_private_message(event)
-                        prompt = f"Received private message from user `{event.sender.nickname}` (id:{event.sender.user_id}): "
+                        prompt = f"[Private][{event.sender.nickname}({event.sender.user_id})]: "
                     case GroupMessageEvent():
                         history.store_group_message(event)
-                        prompt = f"Received group message from user `{event.sender.nickname}` (id:{event.sender.user_id}) in group `{event.group_name}` (id:{event.group_id}): "
+                        prompt = f"[Group][{event.group_name}(id:{event.group_id})][{event.sender.nickname}(id:{event.sender.user_id})]: "
                     case _:
                         log.error("[events->MessageEvent] Cannot parse MessageEvent")
                         raise RuntimeError("[events->MessageEvent] Cannot parse MessageEvent")
@@ -81,22 +81,22 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
                     if(log_level == DEBUG and int(event.sender_id) == config.manager_id):
                         raise UserRestart
                     if event.sender_id != env.self_id:
-                        prompt = f"User `{sender_nickname}` double clicked your avatar in the chatbox (You may poke back as well). Interaction msg: {parse_poke_raw(event.raw_info, sender_nickname, '你')}"
+                        prompt = f"[Private Poke Avatar][{sender_nickname}({event.user_id})] {parse_poke_raw(event.raw_info, sender_nickname, '你')}"
                 case GroupPokeEvent():
                     target_nickname = await get_user_nickname(event.target_id)
-                    prompt = ('Your avatar was' if event.target_id == env.self_id else f"{target_nickname}'s avatar was") + ' double clicked in group ' + f'{event.group_id}' + ' in the chatbox. Interaction msg: ' + parse_poke_raw(event.raw_info, sender_nickname, '你' if event.target_id == env.self_id else target_nickname)
+                    prompt = f"[Group({event.group_id}) Poke Avatar][{sender_nickname}({event.user_id}) -> {target_nickname}({event.target_id})] {parse_poke_raw(event.raw_info, sender_nickname, '你' if event.target_id == env.self_id else target_nickname)}"
             api_call_msg.append({'type': 'text', 'text': prompt})
             event_urgency = EventUrgency.Normal
         case FriendAddNoticeEvent():  # pyright: ignore[reportGeneralTypeIssues]
             new_friend_name: str = (await env.npclient.get_stranger_info(user_id=str(event.user_id))).get('nickname', '')
             env.chatwindows[ChatWindow.ChatType.Private][str(event.user_id)] = ChatWindow(ChatWindow.ChatType.Private, str(event.user_id), new_friend_name)
-            api_call_msg.append({'type': 'text', 'text':f"A new friend (id={event.user_id}, nickname={new_friend_name}) is added."})
+            api_call_msg.append({'type': 'text', 'text':f"[New Friend][[{new_friend_name}({event.user_id})]]"})
             event_urgency = EventUrgency.Normal
         case InputStatusEvent():  # pyright: ignore[reportGeneralTypeIssues]
             event_urgency = EventUrgency.Ignore # [TODO]
         case GroupNameEvent():  # pyright: ignore[reportGeneralTypeIssues]
             log.info("GroupNameEvent")
-            api_call_msg.append({'type': 'text', 'text':f"Group `{event.name_new}`(id={event.group_id}) is now named as {event.name_new}."})
+            api_call_msg.append({'type': 'text', 'text':f"[Group name changed] {event.group_id} -> {event.name_new}"})
             event_urgency = EventUrgency.Normal
         case GroupIncreaseEvent():  # pyright: ignore[reportGeneralTypeIssues]
             log.info("GroupIncreaseEvent")
@@ -109,14 +109,14 @@ async def parse_event(event: NapCatEvent, multimodal: bool = False) -> tuple[lis
                         result = '$Unknown$'
                     return result
                 env.chatwindows[ChatWindow.ChatType.Group][str(event.group_id)] = ChatWindow(ChatWindow.ChatType.Group, str(event.group_id), await get_group_name(event.group_id))
-                prompt = f'You are now added to group {event.group_id}.'
+                prompt = f'[Join Group {event.group_id}].'
             else:
-                prompt = f'User {event.user_id} is added to group {event.group_id}. You may welcome him/her. Use tool to get more info.'
+                prompt = f'[{event.user_id} Join Group {event.group_id}]'
             api_call_msg.append({'type': 'text', 'text': prompt})
             event_urgency = EventUrgency.Normal
         case GroupDecreaseEvent():  # pyright: ignore[reportGeneralTypeIssues]
             log.info("GroupDecreaseEvent")
-            prompt = f'{"You are" if event.user_id == env.self_id else f"User {event.user_id} is"} removed from group {event.group_id}.'
+            prompt = f' [{"You:" if event.user_id == env.self_id else f"{event.user_id}:"} removed from group {event.group_id}]'
             if event.sub_type == 'kick_me':
                 del env.chatwindows[ChatWindow.ChatType.Group][str(event.group_id)]
             api_call_msg.append({'type': 'text', 'text': prompt})

@@ -2,7 +2,6 @@ from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 import threading
 from openai import OpenAI
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
-from concurrent.futures import ThreadPoolExecutor, Future
 import time
 
 from config import config # customized configuration
@@ -15,7 +14,8 @@ class ChatThreadData:
     condition: threading.Condition = threading.Condition()
     stop_event: threading.Event = threading.Event()
     current_worker: Optional[int] = None
-    compress_thread: Optional[Future] = None
+    compress_running: bool = False
+    compress_result: Optional[str] = None
     compressing_messages: list[ChatCompletionMessageParam] = []
 
 chat_data1: ChatThreadData = ChatThreadData()
@@ -56,10 +56,23 @@ def _release_worker(chat_thread_data: ChatThreadData, my_id: int) -> None:
 
 def _compress_message(chat_thread_data: ChatThreadData,
                       uncompressed_messages: list[ChatCompletionMessageParam]) -> None:
-    if not chat_thread_data.compress_thread:
-        chat_thread_data.compressing_messages.extend(uncompressed_messages)
-        chat_thread_data.compress_thread = ThreadPoolExecutor().submit(get_compressed_context, chat_thread_data.compressing_messages)
-        uncompressed_messages.clear()
+    if chat_thread_data.compress_running:
+        return
+    chat_thread_data.compressing_messages.extend(uncompressed_messages)
+    snapshot = list(chat_thread_data.compressing_messages)
+    uncompressed_messages.clear()
+    chat_thread_data.compress_running = True
+
+    def worker() -> None:
+        # 守护线程：进程退出时不会 join 它（executor 的非守护 worker 会把退出卡住）
+        try:
+            chat_thread_data.compress_result = get_compressed_context(snapshot)
+        except Exception as e:
+            log.error(f"[act->_compress_message] {e}")
+        finally:
+            chat_thread_data.compress_running = False
+
+    threading.Thread(target=worker, name="chat-compress", daemon=True).start()
 
 
 def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatCompletionContentPartParam], high_priority: bool) -> None:
@@ -67,21 +80,14 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
     my_id = _acquire_worker(cur_chat_data)
     # Initializing
     compressing_messages = cur_chat_data.compressing_messages
-    uncompressed_messages = env.chat_log
+    uncompressed_messages = env.chat_log.content()
     compressing_bkup = compressing_messages.copy()
     uncompressed_bkup = uncompressed_messages.copy()
     # Check compressed message
-    if cur_chat_data.compress_thread and cur_chat_data.compress_thread.done():
-        try:
-            compress_result = cur_chat_data.compress_thread.result()
-            log.debug("New compressed results received.")
-            cur_chat_data.compressing_messages = [{'role': 'user', 'content': compress_result}]
-        except ConnectionError as e:
-            log.error(f"Retrying for ConnectionError: {e}")
-        except Exception as e:
-            log.error(f"[chat->_apply_compress_result] Chat loop ended: {e}")
-            raise RuntimeError("Chat loop meets fatal error.")
-        cur_chat_data.compress_thread = None
+    if not cur_chat_data.compress_running and cur_chat_data.compress_result is not None:
+        log.debug("New compressed results received.")
+        cur_chat_data.compressing_messages = [{'role': 'user', 'content': cur_chat_data.compress_result}]
+        cur_chat_data.compress_result = None
     uncompressed_messages.append({"role": "user", "content": last_prompt})
     # Working
     should_end: bool = False
@@ -93,6 +99,7 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
             interrupted = False
             while True:
                 fail_times = 0
+                sleeptime = 1
                 try:
                     stream = ai.chat.completions.create(
                         model=config.model_name,
@@ -108,9 +115,15 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
                     fail_times += 1
                     if fail_times > 30:
                         raise RuntimeError(f"{__file__}] Connection error occurred for too many times ({fail_times}). Aborted.")
-                    sleeptime = 1
                     log.error(f"[{__file__}] {e} occured when creating api connection. Retrying in {sleeptime} second(s)...")
+                except Exception as e:
+                    fail_times += 1
+                    if fail_times > 30:
+                        raise RuntimeError(f"{__file__}] Error occurred for too many times ({fail_times}). Aborted.")
+                    log.error(f"[{__file__}] {e} occured when creating api connection. Retrying in {sleeptime} second(s)...")
+                finally:
                     time.sleep(sleeptime)
+
             # Dealing result
             for chunk in stream:
                 choice = chunk.choices[0]
@@ -192,5 +205,5 @@ def _chat_thread_func(cur_chat_data: ChatThreadData, last_prompt: str|List[ChatC
     # Cleaning
     finally:
         log.info("Current chat finished")
-        env.chat_log = compressing_messages + uncompressed_messages
+        env.chat_log.replace(compressing_messages + uncompressed_messages)
         _release_worker(cur_chat_data, my_id)

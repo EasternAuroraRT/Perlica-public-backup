@@ -9,7 +9,8 @@ import traceback
 
 import napcat as np
 from config import config
-import modules.core.act as act
+# import modules.core.act as act
+import modules.core.act_next as act
 import modules.core.env as env
 import modules.core.events as events
 from modules.core.logger import log, UserRestart
@@ -68,6 +69,12 @@ async def main() -> None:
             log.warning(f"Some event is ignored but message is actually generated:\n{str(api_call_msg)}")
 
 
+def shutdown(code: int) -> None:
+    act.stop()
+    env.clean_up()
+    sys.exit(code)
+
+
 if __name__ == "__main__":
     __restart_times = 0
     __max_restart_times = 10
@@ -76,18 +83,15 @@ if __name__ == "__main__":
         try:
             asyncio.run(main())
         except UserRestart:
-            env.clean_up()
             log.warning("Restarting...")
-            sys.exit(2)
+            shutdown(2)
         except KeyboardInterrupt:
             log.warning("Exit...")
-            env.clean_up()
-            sys.exit(0)
+            shutdown(0)
         except Exception as e:
             log.error(f"[{__file__}] {e}\n{traceback.format_exc()}")
             if __restart_times > __max_restart_times:
                 log.fatal(f"[{__file__}] Retrying for over {__max_restart_times} times; Restarting...\n")
-                env.clean_up()
-                sys.exit(1)
+                shutdown(1)
             __restart_times += 1
             time.sleep(1)

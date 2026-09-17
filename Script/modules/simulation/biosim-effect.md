@@ -240,9 +240,15 @@ engine.loaded_from_checkpoint                    # 这次是否真的读到了�
   跨天不补是有意的：中间的外界事件（吃饭、出门）不该被"演"出来。
 - 写盘**先同步、再在锁内取切片、最后锁外落盘**（IO 不占状态锁）；落盘是原子的
   （先写 `.tmp` 再 `os.replace`）。
-- **文件在、却读不了会抛**（`UnpicklingError` / `ValueError`）—— 那是异常，不是"还没有存档"。
-- 格式是内部自定的 pickle：**改了效果字段名之后旧存档读不回来**。这是有意的 ——
-  读不了就报错，不猜。调用方该 `try/except` 兜住并退回新的一天。
+- 文件开头是**魔数 + 版本头**（`biosim-checkpoint vN`）：**改了字段名就 `CHECKPOINT_FORMAT += 1`**，
+  旧档在读 pickle 之前就被判为"版本不认识"，不会死在反序列化里（`Influence` 那种 `__slots__`
+  改动尤其会以底层 `AttributeError` 的形式炸出来）。
+- **存档是不可信输入**：版本号对也不代表内容没坏。反序列化走**白名单**（只放行 `builtins` /
+  `random` / biosim 自己的类，堵死 pickle 任意代码执行），载入后再做结构校验（state / effects /
+  数值 / 枚举），越界数值夹回范围。
+- 版本不认识 / 读坏 / 校验不过都**不会让启动崩**：`BioEngine` 记下 `load_error`、当新的一天，
+  退出时把新档写回（自愈）。调用方读 `loaded_from_checkpoint` / `load_error` 决定要不要打日志。
+- 内容是内部自定的 pickle：字段改名之后旧档读不回来是有意的 —— 读不了就报错，不猜。
 
 注意一个容易踩的点：`add_effect` 落地那一刻也会调 `influence()`，而那次 `tick.dt_hours == 0`。
 效果若要声明"进度"这类状态，得先判断 `tick.dt_hours > 0` 再递减，否则会把自己刚声明的进度减掉、当场被判死。

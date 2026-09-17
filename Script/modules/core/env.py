@@ -20,7 +20,7 @@ self_name: str
 chatwindows: dict[ChatWindow.ChatType, dict[str, ChatWindow]] = {}
 active_chatwindow: ChatWindow
 sysprompt: list[ChatCompletionMessageParam] = [] # Do not easily read or write this variant -- unless you know what you are doing!
-chat_log: list[ChatCompletionMessageParam] = []
+chat_log: ChatLog
 no_disturb_mode: bool = False
 pending_event_msgs: list[ChatCompletionContentPartParam] = []   # 睡着/静音期间积压的事件消息
 username_list: dict[int, str] = {}
@@ -34,27 +34,66 @@ CHAT_LOG_FILE: str = "chat_log.json"
 bio_engine_checkpoint_path: Path = Path("./working_cache/biosim/")
 
 
+# ==================== ChatLog ====================
+class ChatLog:
+    def __init__(self, dirpath: str | Path = chat_log_dir) -> None:
+        self._dirpath = Path(dirpath)
+        self._messages: list[ChatCompletionMessageParam] = self._load()
+
+    def content(self) -> list[ChatCompletionMessageParam]:
+        return self._messages
+
+    def replace(self, messages: list[ChatCompletionMessageParam]) -> None:
+        self._messages = messages
+
+    def save(self) -> Path:
+        """原子写盘：写不了就抛（由调用方兜），失败时清掉半个 `.tmp`，原文件不动。"""
+        self._dirpath.mkdir(parents=True, exist_ok=True)
+        target = self._dirpath / CHAT_LOG_FILE
+        temp = target.with_name(target.name + ".tmp")
+        try:
+            with open(temp, "w", encoding="utf-8") as handle:
+                json.dump(self._messages, handle, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp, target)
+        except BaseException:
+            temp.unlink(missing_ok=True)
+            raise
+        log.info(f"[env] Chat history (item counts: {len(self._messages)}) saved: {target}")
+        return target
+
+    def _load(self) -> list[ChatCompletionMessageParam]:
+        target = self._dirpath / CHAT_LOG_FILE
+        if not target.exists():
+            return []
+        try:
+            with open(target, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+            log.error(f"[env] Chat history unreadable, ignored: {e}")
+            return []
+        if not isinstance(payload, list):
+            log.error("[env] Chat history is not a list, ignored.")
+            return []
+        valid = [item for item in payload if isinstance(item, dict)]
+        if len(valid) != len(payload):
+            log.error(f"[env] Chat history dropped {len(payload) - len(valid)} invalid item(s).")
+        log.info(f"[env] Chat history loaded with {len(valid)} items.")
+        return cast(list[ChatCompletionMessageParam], valid)
+
+
 # ==================== 接口 ====================
+def save_chat_log() -> Path:
+    """把当前对话记录原子写盘（退出时由 clean_up 调用）。"""
+    return chat_log.save()
+
+
 def take_pending() -> list[ChatCompletionContentPartParam]:
     """取走积压的事件消息（取完即清空）。"""
     taken = pending_event_msgs.copy()
     pending_event_msgs.clear()
     return taken
-
-
-def save_chat_log(dirpath: str | Path = chat_log_dir) -> Path:
-    """把当前对话记录原子写盘（退出时由 main 调用）。"""
-    directory = Path(dirpath)
-    directory.mkdir(parents=True, exist_ok=True)
-    target = directory / CHAT_LOG_FILE
-    temp = target.with_name(target.name + ".tmp")
-    with open(temp, "w", encoding="utf-8") as handle:
-        json.dump(chat_log, handle, ensure_ascii=False)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp, target)
-    log.info(f"[env] Chat history (item counts: {len(chat_log)}) saved: {target}")
-    return target
 
 
 def get_chatwindow_prompt() -> str:
@@ -80,15 +119,6 @@ async def init() -> None:
         now = datetime.now()
         return now.hour + now.minute / 60.0
 
-    def load_chat_log() -> list[ChatCompletionMessageParam]:
-        target = chat_log_dir / CHAT_LOG_FILE
-        if not target.exists():
-            return []
-        with open(target, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        log.info(f"[env] Chat history loaded with {len(payload)} items.")
-        return payload if isinstance(payload, list) else []
-
     alarm.ensure_loaded()
 
     npclient = np.NapCatClient(ws_url=config.np_ws_url, token=config.np_token)
@@ -101,7 +131,9 @@ async def init() -> None:
         )
         if not biosim_engine.loaded_from_checkpoint:
             biosim_engine.add_effects(*bio.baseline_effects())
-        chat_log = load_chat_log()
+        if biosim_engine.load_error:
+            log.error(f"[env] BioSim 存档未能载入，本次当新的一天：{biosim_engine.load_error}")
+        chat_log = ChatLog()
         __initialized = True
 
     async with npclient:

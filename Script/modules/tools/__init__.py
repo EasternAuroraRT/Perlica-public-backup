@@ -162,19 +162,21 @@ def switch_chat_window(args: dict) -> list[ChatCompletionContentPartParam]:
     return [{'type': 'text', 'text': "\n".join([f"History:\n{chat_history}", f"Chatbox:\n{str(env.active_chatwindow)}"])}]
 
 def get_image_by_url(args: dict) -> list[ChatCompletionContentPartParam]:
-    from .impl.image_processor import get_image_base64_from_url, get_image_description_from_base64
-    url = get_typed_arg(args, 'url', str)
-    prompt = get_typed_arg(args, 'prompt', (str, type(None)), None)
-    image_b64 = get_image_base64_from_url(url)
-    if config.is_multimodal():
-        return [{'type': 'image_url', 'image_url': {"url": image_b64}}]
-    else:
-        try:
-            result = get_image_description_from_base64(image_b64, prompt)
-            return [{'type': 'text', 'text': result}]
-        except Exception as e:
-            log.error(f"[tools->get_image_by_url] {e}")
-            return [{'type': 'text', 'text': f"Failed to get image from url: {url}\nError: {e}"}]
+    def _get_image(args_inner: dict) -> list[ChatCompletionContentPartParam]:
+        from .impl.image_processor import get_image_base64_from_url, get_image_description_from_base64
+        url = get_typed_arg(args_inner, 'url', str)
+        prompt = get_typed_arg(args_inner, 'prompt', (str, type(None)), None)
+        image_b64 = get_image_base64_from_url(url)
+        if config.is_multimodal():
+            return [{'type': 'image_url', 'image_url': {"url": image_b64}}]
+        else:
+            try:
+                result = get_image_description_from_base64(image_b64, prompt)
+                return [{'type': 'text', 'text': result}]
+            except Exception as e:
+                log.error(f"[tools->get_image_by_url] {e}")
+                return [{'type': 'text', 'text': f"Failed to get image from url: {url}\nError: {e}"}]
+    return _tool_run_async(_get_image, args)
 
 def get_image_by_path(args: dict) -> list[ChatCompletionContentPartParam]:
     from .impl.image_processor import get_image_base64_from_path, get_image_description_from_base64

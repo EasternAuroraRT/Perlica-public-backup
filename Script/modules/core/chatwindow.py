@@ -88,7 +88,7 @@ class ChatWindow(Sized):
 
     async def send(self) -> bool:
         if not self:
-            return False
+            raise RuntimeError("System Error: Chatwindow not initialized.")
         log.info(f"Sending {chat_type_str[self.chat_type]} msg to {self.name}({self.chat_id})")
         response = await env.npclient.send_msg(
             message_type=self._message_type(),

@@ -23,10 +23,10 @@ _LOW_GLYCEMIA = {GlycemiaState.LOW: 1.0, GlycemiaState.NORMAL: 0.0, GlycemiaStat
 _AWAKE = {SleepState.AWAKE: 1.0, SleepState.LIGHT: 0.0, SleepState.DEEP: 0.0, SleepState.REM: 0.0}
 
 # 血糖自身也分档：高了压得快，低了肝糖原顶上。
-_GLUCOSE_BAND_FACTOR = {GlycemiaState.HIGH: 1.3, GlycemiaState.NORMAL: 1.0, GlycemiaState.LOW: 0.5}
+_GLUCOSE_BAND_FACTOR = {GlycemiaState.HIGH: 1.8, GlycemiaState.NORMAL: 1.0, GlycemiaState.LOW: 0.55}
 
 # 胃排空速度：血糖高时饱得久，血糖低时掉得快。
-_FULLNESS_BAND_FACTOR = {GlycemiaState.HIGH: 0.35, GlycemiaState.NORMAL: 1.0, GlycemiaState.LOW: 1.6}
+_FULLNESS_BAND_FACTOR = {GlycemiaState.HIGH: 0.7, GlycemiaState.NORMAL: 1.0, GlycemiaState.LOW: 1.4}
 
 
 def hunger_of(fullness: float) -> HungerState:
@@ -44,8 +44,8 @@ def glycemia_of(glucose: float) -> GlycemiaState:
 class EnergyDynamics(Effect):
     """能量：清醒基准代谢；血糖过低时额外掉（睡着不算这笔）。"""
 
-    def __init__(self, *, base_cost_per_hour: float = 2.0,
-                 low_glycemia_cost_per_hour: float = 4.0) -> None:
+    def __init__(self, *, base_cost_per_hour: float = 4.0,
+                 low_glycemia_cost_per_hour: float = 2.5) -> None:
         self.base_cost_per_hour = base_cost_per_hour
         self.low_glycemia_cost_per_hour = low_glycemia_cost_per_hour
         self._inf = Influence()
@@ -60,7 +60,7 @@ class EnergyDynamics(Effect):
 class GlucoseDynamics(Effect):
     """血糖：清醒基准消耗；睡眠时消耗变慢由睡眠效果用乘区声明。"""
 
-    def __init__(self, *, decay_per_hour: float = 6.0) -> None:
+    def __init__(self, *, decay_per_hour: float = 3.5) -> None:
         self.decay_per_hour = decay_per_hour
         self._inf = Influence()
 
@@ -73,7 +73,7 @@ class GlucoseDynamics(Effect):
 class FullnessDynamics(Effect):
     """饱腹：胃里装了多少。下降速度绑在血糖浓度上，不是固定斜率。"""
 
-    def __init__(self, *, decay_per_hour: float = 20.0) -> None:
+    def __init__(self, *, decay_per_hour: float = 9.0) -> None:
         self.decay_per_hour = decay_per_hour
         self._inf = Influence()
 
@@ -86,8 +86,8 @@ class FullnessDynamics(Effect):
 class StressDynamics(Effect):
     """压力：能量低、饥饿时上升，恢复时回落。"""
 
-    def __init__(self, *, rise_rate_per_hour: float = 10.0, fall_rate_per_hour: float = 5.0,
-                 energy_low: float = 40.0, hunger_factor: float = 0.8) -> None:
+    def __init__(self, *, rise_rate_per_hour: float = 4.0, fall_rate_per_hour: float = 3.0,
+                 energy_low: float = 60.0, hunger_factor: float = 1.0) -> None:
         self.rise_rate_per_hour = rise_rate_per_hour
         self.fall_rate_per_hour = fall_rate_per_hour
         self.energy_low = energy_low
@@ -116,7 +116,7 @@ class StressDynamics(Effect):
 class MoodDynamics(Effect):
     """心情：向目标值收敛，目标由压力与能量决定。"""
 
-    def __init__(self, *, response_rate_per_hour: float = 2.0, happy_stress: float = 30.0,
+    def __init__(self, *, response_rate_per_hour: float = 0.25, happy_stress: float = 30.0,
                  happy_energy: float = 60.0, irritable_stress: float = 70.0) -> None:
         self.response_rate_per_hour = response_rate_per_hour
         self.happy_stress = happy_stress
@@ -146,11 +146,11 @@ def baseline_effects() -> list[Effect]:
     改一个数字一眼看得出它改的是谁。想要另一套平衡，自己拼一组即可。
     """
     return [
-        EnergyDynamics(base_cost_per_hour=2.0, low_glycemia_cost_per_hour=4.0),
-        GlucoseDynamics(decay_per_hour=6.0),
-        FullnessDynamics(decay_per_hour=20.0),
-        StressDynamics(rise_rate_per_hour=10.0, fall_rate_per_hour=5.0,
-                       energy_low=40.0, hunger_factor=0.8),
-        MoodDynamics(response_rate_per_hour=2.0, happy_stress=30.0,
+        EnergyDynamics(base_cost_per_hour=4.0, low_glycemia_cost_per_hour=2.5),
+        GlucoseDynamics(decay_per_hour=3.5),
+        FullnessDynamics(decay_per_hour=9.0),
+        StressDynamics(rise_rate_per_hour=4.0, fall_rate_per_hour=3.0,
+                       energy_low=60.0, hunger_factor=1.0),
+        MoodDynamics(response_rate_per_hour=0.25, happy_stress=30.0,
                      happy_energy=60.0, irritable_stress=70.0),
     ]

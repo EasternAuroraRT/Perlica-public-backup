@@ -60,7 +60,7 @@ class ExerciseEffect(Effect):
     """运动：持续耗能、耗血糖，切活跃相位；停下时相位还原。"""
 
     def __init__(self, *, intensity: float = 1.0, minutes: float = 20.0,
-                 energy_rate_per_hour: float = 4.0, glucose_rate_per_hour: float = 12.0) -> None:
+                 energy_rate_per_hour: float = 18.0, glucose_rate_per_hour: float = 30.0) -> None:
         self.intensity = intensity
         self.total_hours = minutes / 60.0
         self.energy_rate_per_hour = energy_rate_per_hour
@@ -95,7 +95,7 @@ class SleepEffect(Effect):
     时长是结果，所以没有"睡够 8 小时"这种东西。
     """
 
-    def __init__(self, *, recovery_per_hour: float = 9.0, wake_rate_per_hour: float = 1.5,
+    def __init__(self, *, recovery_per_hour: float = 11.0, wake_rate_per_hour: float = 1.5,
                  wake_sharpness: float = 30.0, cycle_hours: float = 1.5,
                  glucose_factor: float = -0.6, rng: random.Random | None = None) -> None:
         self.recovery_per_hour = recovery_per_hour

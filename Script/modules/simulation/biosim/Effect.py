@@ -20,6 +20,7 @@ class Effect(ABC):
         """声明这一帧的贡献（基础值/乘区/瞬时/方面）。不改状态。"""
         ...
 
+    @abstractmethod
     def alive(self, state: BioState, tick: Tick) -> bool:
         """还活着吗；False 则本帧末被摘掉（终态在最后一帧的声明里，没有额外收尾函数）。"""
         return True

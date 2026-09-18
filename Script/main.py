@@ -9,8 +9,7 @@ import traceback
 
 import napcat as np
 from config import config
-# import modules.core.act as act
-import modules.core.act_next as act
+import modules.core.act as act
 import modules.core.env as env
 import modules.core.events as events
 from modules.core.logger import log, UserRestart

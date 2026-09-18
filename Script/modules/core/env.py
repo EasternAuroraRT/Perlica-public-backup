@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import * # pyright: ignore[reportWildcardImportFromLibrary]
 from openai.types.chat import * # pyright: ignore[reportWildcardImportFromLibrary]
 import json
+import asyncio
 import os
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ no_disturb_mode: bool = False
 pending_event_msgs: list[ChatCompletionContentPartParam] = []   # 睡着/静音期间积压的事件消息
 username_list: dict[int, str] = {}
 biosim_engine: bio.BioEngine
+_main_loop: asyncio.AbstractEventLoop
 __initialized: bool = False
 
 # ==================== 常量 ====================
@@ -96,6 +98,17 @@ def take_pending() -> list[ChatCompletionContentPartParam]:
     return taken
 
 
+_T = TypeVar("_T")
+def run_napcat_async(coro: Coroutine[Any, Any, _T], timeout: float = 30.0) -> _T:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("[env] run_on_main_loop 不能在事件循环线程里调用（会等自己）")
+    return asyncio.run_coroutine_threadsafe(coro, _main_loop).result(timeout)
+
+
 def get_chatwindow_prompt() -> str:
     window = active_chatwindow
     if not window:
@@ -113,6 +126,9 @@ def is_active_time() -> bool:
 async def init() -> None:
     global npclient, self_id, self_name, chatwindows, active_chatwindow
     global sysprompt, chat_log, username_list, biosim_engine, __initialized
+    global _main_loop
+
+    _main_loop = asyncio.get_running_loop()
 
     def now_clock_hour() -> float:
         """当前时刻的小数小时（0~24），精确到分钟。"""

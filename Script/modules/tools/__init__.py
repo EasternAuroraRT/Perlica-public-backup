@@ -116,18 +116,18 @@ def type_del(args: dict) -> list[ChatCompletionContentPartParam]:
 def send_msg(_: dict) -> list[ChatCompletionContentPartParam]:
     if not env.active_chatwindow.content:
         return [{'type': 'text', 'text': "你还没有输入任何内容！"}]
-    asyncio.run(env.active_chatwindow.send())
+    env.run_napcat_async(env.active_chatwindow.send())
     return [{'type': 'text', 'text': f"已向{chat_type_str_cn[env.active_chatwindow.chat_type]}`{env.active_chatwindow.name}`({env.active_chatwindow.chat_id})发送{str(env.active_chatwindow)}. 当前聊天窗口输入框已清空."}]
 
-# def end_action(_: dict) -> list[ChatCompletionContentPartParam]:
-#     return placeholder(_)
+def end_action(_: dict) -> list[ChatCompletionContentPartParam]:
+    return placeholder(_)
 # This tool call will be processed directly inside the chat loop.
 
 def recall_msg(args: dict) -> list[ChatCompletionContentPartParam]:
     import modules.core.history as history
     msg_id = get_typed_arg(args, 'message_id', (int, str))
     try:
-        asyncio.run(env.npclient.delete_msg(message_id=msg_id))
+        env.run_napcat_async(env.npclient.delete_msg(message_id=msg_id))
     except Exception as e:
         return [{'type': 'text', 'text': f"Failed to recall message {msg_id}: {str(e)}"}]
     history.delete_message_by_id(int(msg_id))
@@ -476,19 +476,19 @@ def send_poke(args: dict) -> list[ChatCompletionContentPartParam]:
     target = get_typed_arg(args, 'target_id', str)
     group = get_typed_arg(args, 'group_id', str, '')
     if group:
-        asyncio.run(env.npclient.send_poke(user_id=target, group_id=group))
+        env.run_napcat_async(env.npclient.send_poke(user_id=target, group_id=group))
     else:
-        asyncio.run(env.npclient.send_poke(user_id=target))
+        env.run_napcat_async(env.npclient.send_poke(user_id=target))
     result = f'Poked user {target} {f"in group {group} " if group else ''}successfully.'
     return [{'type': 'text', 'text': result}]
 
 def get_user_info(args: dict) -> list[ChatCompletionContentPartParam]:
     user_id = get_typed_arg(args, 'user_id', str)
-    return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_stranger_info(user_id=user_id)))}]
+    return [{'type': 'text', 'text': str(env.run_napcat_async(env.npclient.get_stranger_info(user_id=user_id)))}]
 
 def get_msg_by_id(args: dict) -> list[ChatCompletionContentPartParam]:
     msg_id = get_typed_arg(args, 'id', int)
-    return [{'type': 'text', 'text': str(asyncio.run(env.npclient.get_msg(message_id=msg_id)))}]
+    return [{'type': 'text', 'text': str(env.run_napcat_async(env.npclient.get_msg(message_id=msg_id)))}]
 
 def web_search(args: dict) -> List[ChatCompletionContentPartParam]:
     def _web_search(params: dict) -> List[ChatCompletionContentPartParam]:
@@ -576,7 +576,7 @@ def send_file(args: dict) -> list[ChatCompletionContentPartParam]:
         url = file_server.publish(src)
         log.info(f"File url = {url}")
         env.active_chatwindow.add_file(url, file_name)
-        asyncio.run(env.active_chatwindow.send())
+        env.run_napcat_async(env.active_chatwindow.send())
         result = f'File `{path.name}` uploaded successfully.'
     except Exception as e:
         log.error(f"[{__file__}->send_file] Failed to upload file `{file_path}`.\n{e}")

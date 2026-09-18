@@ -79,12 +79,24 @@ def _label(field: LabelField, member: Enum) -> str:
     return LABELS[field][str(member.value)]
 
 
+# 三档形容的切点。这三个必须和 StateVec 里各维度自己声明的 bands 一致，
+# 否则会出现"引擎说不饿、这行文字说饥饿"的自相矛盾读数。
+_QUALITY_CUTS: Mapping[QualityField, tuple[float, float]] = {
+    "energy": (30.0, 70.0),        # energy 不是带 bands 的维度，这里自己定
+    "fullness": (25.0, 60.0),      # = StateVec.dimension("fullness").bands
+    "mood": (30.0, 70.0),          # = StateVec.dimension("mood").bands
+    "stress": (30.0, 70.0),        # stress 是方面不是维度，这里自己定
+    "glucose": (38.0, 62.0),       # = StateVec.dimension("glucose").bands
+}
+
+
 def _qual(field: QualityField, value: float) -> str:
     """数值 -> 三档形容（低 / 中 / 高）。"""
+    low_cut, high_cut = _QUALITY_CUTS[field]
     low, mid, high = QUALITY[field]
-    if value < 30.0:
+    if value < low_cut:
         return low
-    if value < 70.0:
+    if value < high_cut:
         return mid
     return high
 
